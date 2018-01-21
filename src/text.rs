@@ -11,7 +11,6 @@ use object;
 
 use color::Color;
 use hub::Operation as HubOperation;
-use render::{BackendCommandBuffer, BackendFactory, BackendResources, ColorFormat, DepthFormat};
 
 pub(crate) enum Operation {
     Text(String),

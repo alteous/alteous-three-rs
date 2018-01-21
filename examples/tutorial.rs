@@ -3,8 +3,10 @@ extern crate three;
 use three::Object;
 
 fn main() {
-    let mut window = three::Window::new("Getting started with three-rs");
+    let (mut window, mut input, mut renderer, mut factory) =
+        three::Window::new("Getting started with three-rs");
 
+    let mut scene = factory.scene();
     let vertices = vec![
         [-0.5, -0.5, -0.5].into(),
         [0.5, -0.5, -0.5].into(),
@@ -15,17 +17,19 @@ fn main() {
         color: 0xFFFF00,
         map: None,
     };
-    let mut mesh = window.factory.mesh(geometry, material);
-    mesh.set_parent(&window.scene);
+    let mut mesh = factory.mesh(geometry, material);
+    mesh.set_parent(&scene);
 
-    window.scene.background = three::Background::Color(0xC6F0FF);
+    scene.background = three::Background::Color(0xC6F0FF);
 
     let center = [0.0, 0.0];
     let yextent = 1.0;
     let zrange = -1.0 .. 1.0;
-    let camera = window.factory.orthographic_camera(center, yextent, zrange);
+    let camera = factory.orthographic_camera(center, yextent, zrange);
 
-    while window.update() {
-        window.render(&camera);
+    while !input.quit_requested() {
+        input.update();
+        renderer.render(&scene, &camera);
+        window.swap_buffers();
     }
 }

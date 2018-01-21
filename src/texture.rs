@@ -1,47 +1,26 @@
-use gfx::handle as h;
-use render::BackendResources;
 use std::path::Path;
 
 use mint;
 
-pub use gfx::texture::{FilterMethod, WrapMode};
-
 /// The sampling properties for a `Texture`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Sampler(pub h::Sampler<BackendResources>);
+pub struct Sampler;
 
 /// An image applied (mapped) to the surface of a shape or polygon.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Texture<T> {
-    view: h::ShaderResourceView<BackendResources, T>,
-    sampler: h::Sampler<BackendResources>,
+pub struct Texture { 
     total_size: [u32; 2],
     tex0: [f32; 2],
     tex1: [f32; 2],
 }
 
-impl<T> Texture<T> {
-    pub(crate) fn new(
-        view: h::ShaderResourceView<BackendResources, T>,
-        sampler: h::Sampler<BackendResources>,
-        total_size: [u32; 2],
-    ) -> Self {
+impl Texture {
+    pub(crate) fn new(total_size: [u32; 2]) -> Self {
         Texture {
-            view,
-            sampler,
             total_size,
             tex0: [0.0; 2],
             tex1: [total_size[0] as f32, total_size[1] as f32],
         }
-    }
-
-    pub(crate) fn to_param(
-        &self,
-    ) -> (
-        h::ShaderResourceView<BackendResources, T>,
-        h::Sampler<BackendResources>,
-    ) {
-        (self.view.clone(), self.sampler.clone())
     }
 
     /// See [`Sprite::set_texel_range`](struct.Sprite.html#method.set_texel_range).
@@ -105,25 +84,10 @@ impl<P: AsRef<Path>> CubeMapPath<P> {
 /// Cubemap is six textures useful for
 /// [`Cubemapping`](https://en.wikipedia.org/wiki/Cube_mapping).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CubeMap<T> {
-    view: h::ShaderResourceView<BackendResources, T>,
-    sampler: h::Sampler<BackendResources>,
-}
+pub struct CubeMap;
 
-impl<T> CubeMap<T> {
-    pub(crate) fn new(
-        view: h::ShaderResourceView<BackendResources, T>,
-        sampler: h::Sampler<BackendResources>,
-    ) -> Self {
-        CubeMap { view, sampler }
-    }
-
-    pub(crate) fn to_param(
-        &self,
-    ) -> (
-        h::ShaderResourceView<BackendResources, T>,
-        h::Sampler<BackendResources>,
-    ) {
-        (self.view.clone(), self.sampler.clone())
+impl CubeMap {
+    pub(crate) fn new() -> Self {
+        CubeMap
     }
 }

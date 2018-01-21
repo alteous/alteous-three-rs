@@ -6,7 +6,6 @@ use std::ops;
 
 use camera::Orthographic;
 use hub::Operation;
-use render::{BackendResources, ShadowFormat};
 
 /// `ShadowMap` is used to render shadows from [`PointLight`](struct.PointLight.html)
 /// and [`DirectionalLight`](struct.DirectionalLight.html).

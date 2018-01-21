@@ -1,4 +1,4 @@
-use glutin::{ElementState, MouseButton, MouseScrollDelta};
+use glutin::{self, ElementState, MouseButton, MouseScrollDelta};
 pub use glutin::VirtualKeyCode as Key;
 use mint;
 
@@ -37,12 +37,14 @@ struct Diff {
 
 /// Controls user and system input from keyboard, mouse and system clock.
 pub struct Input {
+    events_loop: Option<glutin::EventsLoop>,
+    quit_requested: bool,
     state: State,
     delta: Diff,
 }
 
 impl Input {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(events_loop: glutin::EventsLoop) -> Self {
         let state = State {
             time_moment: time::Instant::now(),
             is_focused: true,
@@ -60,9 +62,54 @@ impl Input {
             mouse_hit: Vec::new(),
             mouse_wheel: Vec::new(),
         };
-        Input { state, delta }
+        Input {
+            quit_requested: false,
+            events_loop: Some(events_loop),
+            state,
+            delta,
+        }
     }
 
+    pub fn update(&mut self) {
+        self.reset();
+        let mut events_loop = self.events_loop.take().unwrap();
+        events_loop.poll_events(|event| {
+            use glutin::WindowEvent::{Closed, Focused, KeyboardInput, MouseInput, MouseWheel};
+            match event {
+                glutin::Event::WindowEvent { event, .. } => match event {
+                    // Resized(..) => renderer.resize(window),
+                    Focused(state) => self.window_focus(state),
+                    Closed => self.quit_requested = true,
+                    KeyboardInput {
+                        input: glutin::KeyboardInput {
+                            state,
+                            virtual_keycode: Some(keycode),
+                            ..
+                        },
+                        ..
+                    } => self.keyboard_input(state, keycode),
+                    MouseInput { state, button, .. } => self.mouse_input(state, button),
+                    /****************************************************************************************CursorMoved {
+                        position: (x, y), ..
+                    } => self.mouse_moved(
+                        [x as f32, y as f32].into(),
+                        renderer.map_to_ndc([x as f32, y as f32]),
+                    ),*/
+                    MouseWheel { delta, .. } => self.mouse_wheel_input(delta),
+                    _ => {}
+                },
+                glutin::Event::DeviceEvent { event, .. } => match event {
+                    glutin::DeviceEvent::Motion { axis, value } => {
+                        self.axis_moved_raw(axis as u8, value as f32);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        });
+        self.events_loop = Some(events_loop);
+    }
+    
     /// Manually reset current `Input` state.
     ///
     /// Usually there is no need in using this method, because [`Window`](struct.Window.html)
@@ -70,7 +117,7 @@ impl Input {
     ///
     /// It will discard all mouse or raw axes movements and also all keyboard hits.
     /// Moreover, delta time will be recalculated.
-    pub fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         let now = time::Instant::now();
         let dt = now - self.state.time_moment;
         self.state.time_moment = now;
@@ -81,8 +128,14 @@ impl Input {
         self.delta.axes_raw.clear();
         self.delta.mouse_hit.clear();
         self.delta.mouse_wheel.clear();
+        self.quit_requested = false;
     }
 
+    /// Returns `true` if a quit event has been registered.
+    pub fn quit_requested(&self) -> bool {
+        self.quit_requested
+    }
+    
     /// Create new timer.
     pub fn time(&self) -> Timer {
         Timer {

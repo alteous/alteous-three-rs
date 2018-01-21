@@ -3,7 +3,6 @@
 use color;
 
 use color::Color;
-use render::BasicPipelineState;
 use texture::Texture;
 
 #[doc(inline)]
@@ -24,7 +23,7 @@ pub mod basic {
         /// Texture applied using the mesh texture co-ordinates.
         ///
         /// Default: `None`.
-        pub map: Option<Texture<[f32; 4]>>,
+        pub map: Option<Texture>,
     }
 
     impl Default for Basic {
@@ -34,19 +33,6 @@ pub mod basic {
                 map: None,
             }
         }
-    }
-
-    /// Parameters for a basic solid mesh material with a custom pipeline.
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct Custom {
-        /// Solid color applied in the absense of `map`.
-        pub color: Color,
-
-        /// Texture applied using the mesh texture co-ordinates.
-        pub map: Option<Texture<[f32; 4]>>,
-
-        /// The custom pipeline state object to be applied to the mesh.
-        pub pipeline: BasicPipelineState,
     }
 }
 
@@ -137,27 +123,27 @@ pub struct Pbr {
     /// Base color texture.
     ///
     /// Default: `None`.
-    pub base_color_map: Option<Texture<[f32; 4]>>,
+    pub base_color_map: Option<Texture>,
 
     /// Normal texture.
     ///
     /// Default: `None`.
-    pub normal_map: Option<Texture<[f32; 4]>>,
+    pub normal_map: Option<Texture>,
 
     /// Emissive texture.
     ///
     /// Default: `None`.
-    pub emissive_map: Option<Texture<[f32; 4]>>,
+    pub emissive_map: Option<Texture>,
 
     /// Metallic-roughness texture.
     ///
     /// Default: `None`.
-    pub metallic_roughness_map: Option<Texture<[f32; 4]>>,
+    pub metallic_roughness_map: Option<Texture>,
 
     /// Occlusion texture.
     ///
     /// Default: `None`.
-    pub occlusion_map: Option<Texture<[f32; 4]>>,
+    pub occlusion_map: Option<Texture>,
 }
 
 impl Default for Pbr {
@@ -208,7 +194,7 @@ impl Default for Phong {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sprite {
     /// The texture the apply to the sprite.
-    pub map: Texture<[f32; 4]>,
+    pub map: Texture,
 }
 
 /// Parameters for mesh wireframe rasterization.
@@ -225,10 +211,6 @@ pub struct Wireframe {
 pub enum Material {
     /// Renders triangle meshes with a solid color or texture.
     Basic(Basic),
-
-    /// Renders triangle meshes with a custom pipeline with a basic material as
-    /// its input.
-    CustomBasic(basic::Custom),
 
     /// Renders line strip meshes with a solid color and unit width.
     Line(Line),
@@ -255,12 +237,6 @@ pub enum Material {
 impl From<Basic> for Material {
     fn from(params: Basic) -> Material {
         Material::Basic(params)
-    }
-}
-
-impl From<basic::Custom> for Material {
-    fn from(params: basic::Custom) -> Material {
-        Material::CustomBasic(params)
     }
 }
 

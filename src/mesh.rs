@@ -3,7 +3,7 @@ use object;
 use geometry::Geometry;
 use hub::Operation;
 use material::Material;
-use render::DynamicData;
+use hub::DynamicData;
 use skeleton::Skeleton;
 
 use std::hash::{Hash, Hasher};

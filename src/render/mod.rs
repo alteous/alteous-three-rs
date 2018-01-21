@@ -1,42 +1,262 @@
 //! The renderer.
 
-use cgmath::{Matrix4, SquareMatrix, Transform as Transform_, Vector3};
-use color;
-use froggy;
 use gfx;
 use gfx::format::I8Norm;
-use gfx::memory::Typed;
-use gfx::traits::{Device, Factory as Factory_, FactoryExt};
-#[cfg(feature = "opengl")]
-use gfx_device_gl as back;
-#[cfg(feature = "opengl")]
-use gfx_window_glutin;
-#[cfg(feature = "opengl")]
+use gpu;
 use glutin;
-use hub;
 use mint;
+use itertools::Either;
 
 pub mod source;
 
-use std::{io, mem, str};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{iter, mem};
 
-pub use self::back::CommandBuffer as BackendCommandBuffer;
-pub use self::back::Factory as BackendFactory;
-pub use self::back::Resources as BackendResources;
 pub use self::source::Source;
 
 use camera::Camera;
 use factory::Factory;
-use hub::{SubLight, SubNode};
-use light::{ShadowMap, ShadowProjection};
+use geometry::Geometry;
+use hub:: SubNode;
+//use light::{ShadowMap, ShadowProjection};
 use material::Material;
 use mesh::MAX_TARGETS;
-use scene::{Background, Scene};
-use text::Font;
-use texture::Texture;
+use scene::Scene;
+//use text::Font;
 
+/// Default values for type `Vertex`.
+pub const DEFAULT_VERTEX: Vertex = Vertex {
+    a_Position: [0.0, 0.0, 0.0, 1.0],
+    a_TexCoord: [0.0, 0.0],
+    a_Normal: [I8Norm(0), I8Norm(127), I8Norm(0), I8Norm(0)],
+    a_Tangent: [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(0)],
+
+    a_JointIndices: [0, 0, 0, 0],
+    a_JointWeights: [1.0, 1.0, 1.0, 1.0],
+};
+
+impl Default for Vertex {
+    fn default() -> Self {
+        DEFAULT_VERTEX
+    }
+}
+
+macro_rules! offset_of {
+    ($T:ty, $field:ident) => {
+        unsafe {
+            let obj: $T = ::std::mem::uninitialized();
+            let obj_ptr: *const u8 = ::std::mem::transmute(&obj);
+            let member_ptr: *const u8 = ::std::mem::transmute(&obj.$field);
+
+            ::std::mem::forget(obj);
+
+            (member_ptr as usize) - (obj_ptr as usize)
+        }
+    }
+}
+
+#[allow(non_snake_case)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+pub struct Vertex {
+    /// Vertex position in local co-ordinate space.
+    pub a_Position: [f32; 4],
+
+    /// Vertex texture co-ordiante in 2D texture space.
+    pub a_TexCoord: [f32; 2],
+
+    /// Vertex normal in local co-ordinate space.
+    pub a_Normal: [gfx::format::I8Norm; 4],
+
+    /// Vertex tangent in local co-ordinate space
+    /// in the form `[x, y, z, w]` where `w` defines
+    /// handedness of the tangent.
+    pub a_Tangent: [gfx::format::I8Norm; 4],
+
+    /// Indices of joint matrices.
+    pub a_JointIndices: [u32; 4],
+
+    /// Weights of joint matrix contributions.
+    pub a_JointWeights: [f32; 4],
+}
+
+use gpu::buffer::Format;
+
+const NORMAL_Z: [I8Norm; 4] = [
+    I8Norm(0), I8Norm(0), I8Norm(1), I8Norm(0)
+];
+
+const TANGENT_X: [I8Norm; 4] = [
+    I8Norm(1), I8Norm(0), I8Norm(0),  I8Norm(1)
+];
+
+use factory::f2i;
+
+pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
+    let position_iter = geometry.vertices.iter();
+    let normal_iter = if geometry.normals.is_empty() {
+        Either::Left(iter::repeat(NORMAL_Z))
+    } else {
+        Either::Right(
+            geometry
+                .normals
+                .iter()
+                .map(|n| [f2i(n.x), f2i(n.y), f2i(n.z), I8Norm(0)]),
+        )
+    };
+    let tex_coord_iter = if geometry.tex_coords.is_empty() {
+        Either::Left(iter::repeat([0.0, 0.0]))
+    } else {
+        Either::Right(geometry.tex_coords.iter().map(|uv| [uv.x, uv.y]))
+    };
+    let tangent_iter = if geometry.tangents.is_empty() {
+        Either::Left(iter::repeat(TANGENT_X))
+    } else {
+        Either::Right(
+            geometry
+                .tangents
+                .iter()
+                .map(|t| [f2i(t.x), f2i(t.y), f2i(t.z), f2i(t.w)]),
+        )
+    };
+    let joint_indices_iter = if geometry.joints.indices.is_empty() {
+        Either::Left(iter::repeat([0, 0, 0, 0]))
+    } else {
+        Either::Right(
+            geometry.joints.indices
+                .iter()
+                .map(|x| [x[0] as u32, x[1] as u32, x[2] as u32, x[3] as u32])
+        )
+    };
+    let joint_weights_iter = if geometry.joints.weights.is_empty() {
+        Either::Left(iter::repeat([1.0, 1.0, 1.0, 1.0]))
+    } else {
+        Either::Right(geometry.joints.weights.iter().cloned())
+    };
+
+    izip!(
+        position_iter,
+        normal_iter,
+        tangent_iter,
+        tex_coord_iter,
+        joint_indices_iter,
+        joint_weights_iter
+    )
+        .map(|(pos, normal, tangent, uv, joint_indices, joint_weights)| {
+            Vertex {
+                a_Position: [pos.x, pos.y, pos.z, 1.0],
+                a_Normal: normal,
+                a_TexCoord: uv,
+                a_Tangent: tangent,
+                a_JointIndices: joint_indices,
+                a_JointWeights: joint_weights,
+                .. Default::default()
+            }
+        })
+        .collect()
+}
+
+use gpu::buffer as buf;
+
+pub fn make_vertex_array(
+    factory: &gpu::Factory,
+    indices: Option<&[[u32; 3]]>,
+    vertices: &[Vertex],
+) -> gpu::VertexArray {
+    let vertex_buffer = factory.buffer(buf::Kind::Array, buf::Usage::StaticDraw);
+    factory.initialize_buffer(&vertex_buffer, vertices);
+
+    let position = gpu::Accessor::new(
+        vertex_buffer.clone(),
+        Format::Float { bits: 32, size: 3 },
+        offset_of!(Vertex, a_Position),
+        mem::size_of::<Vertex>(),
+    );
+    let tex_coord = gpu::Accessor::new(
+        vertex_buffer.clone(),
+        Format::Float { bits: 32, size: 2 },
+        offset_of!(Vertex, a_TexCoord),
+        mem::size_of::<Vertex>(),
+    );
+    let normal = gpu::Accessor::new(
+        vertex_buffer.clone(),
+        Format::Signed { bits: 8, size: 4, norm: true },
+        offset_of!(Vertex, a_Normal),
+        mem::size_of::<Vertex>(),
+    );
+    let tangent = gpu::Accessor::new(
+        vertex_buffer.clone(),
+        Format::Signed { bits: 8, size: 4, norm: true },
+        offset_of!(Vertex, a_Tangent),
+        mem::size_of::<Vertex>(),
+    );
+    let joint_indices = gpu::Accessor::new(
+        vertex_buffer.clone(),
+        Format::Unsigned { bits: 32, size: 4, norm: false },
+        offset_of!(Vertex, a_JointIndices),
+        mem::size_of::<Vertex>(),
+    );
+    let joint_weights = gpu::Accessor::new(
+        vertex_buffer.clone(),
+        Format::Float { bits: 32, size: 4 },
+        offset_of!(Vertex, a_JointWeights),
+        mem::size_of::<Vertex>(),
+    );
+    let index_buffer = indices.map(|slice| {
+        let buffer = factory.buffer(buf::Kind::Index, buf::Usage::StaticDraw);
+        factory.initialize_buffer(&buffer, slice);
+        buffer
+    });
+
+    let mut builder = gpu::VertexArray::builder();
+    builder.attribute(0, position);
+    builder.attribute(1, tex_coord);
+    builder.attribute(2, normal);
+    builder.attribute(3, tangent);
+    builder.attribute(4, joint_indices);
+    builder.attribute(5, joint_weights);
+    {
+        if let Some(buf) = index_buffer {
+            builder.indices(
+                gpu::Accessor::new(
+                    buf,
+                    Format::Unsigned { bits: 32, norm: false, size: 1 },
+                    0,
+                    mem::size_of::<u32>(),
+                )
+            );  
+        }
+    }
+
+    factory.vertex_array(builder)
+}
+
+/// Enables/disables weight contributions to vertex inputs.
+#[derive(Clone, Debug)]
+pub struct DisplacementContribution {
+    /// Set to `1.0` if weights should influence `a_Position`.
+    pub position: f32,
+    /// Set to `1.0` if weights should influence `a_Normal`.
+    pub normal: f32,
+    /// Set to `1.0` if weights should influence `a_Tangent`.
+    pub tangent: f32,
+    /// The displacement weight.
+    pub weight: f32,
+}
+
+/// Set of zero valued displacement contribution which cause vertex attributes
+/// to be unchanged by morph targets.
+pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGETS] = [
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+];
+
+/*
 /// The format of the back buffer color requested from the windowing system.
 pub type ColorFormat = gfx::format::Rgba8;
 /// The format of the depth stencil buffer requested from the windowing system.
@@ -112,19 +332,6 @@ impl Default for Vertex {
         DEFAULT_VERTEX
     }
 }
-
-/// Set of zero valued displacement contribution which cause vertex attributes
-/// to be unchanged by morph targets.
-pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGETS] = [
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-];
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 gfx_defines! {
@@ -456,7 +663,7 @@ pub struct DebugQuadHandle(froggy::Pointer<DebugQuad>);
 /// Renders [`Scene`](struct.Scene.html) by [`Camera`](struct.Camera.html).
 ///
 /// See [Window::render](struct.Window.html#method.render).
-pub struct Renderer {
+pub struct OldRenderer {
     device: back::Device,
     encoder: gfx::Encoder<back::Resources, back::CommandBuffer>,
     const_buf: gfx::handle::Buffer<back::Resources, Globals>,
@@ -476,8 +683,179 @@ pub struct Renderer {
     /// `ShadowType` of this `Renderer`.
     pub shadow: ShadowType,
 }
+*/
+
+#[repr(C)]
+struct TriangleVertex {
+    position: [f32; 3],
+}
+
+#[repr(C)]
+struct UniformBlock {
+    color: [f32; 4],
+}
+
+const POSITION_FORMAT: gpu::buffer::Format = gpu::buffer::Format::Float { size: 3, bits: 32 };
+
+const TRIANGLE_DATA: &'static [TriangleVertex] = &[
+    TriangleVertex { position: [ -0.5, -0.5, 0.0 ] },
+    TriangleVertex { position: [ 0.5, -0.5, 0.0 ] },
+    TriangleVertex { position: [ 0.0, 0.5, 0.0 ] },
+];
+
+const YELLOW: &'static [UniformBlock] = &[
+    UniformBlock { color: [1.0, 1.0, 0.0, 1.0] },
+];
+
+const GREEN_PIXEL: &'static [[u8; 4]] = &[
+    [0, 255, 0, 255],
+];
+
+pub struct Renderer {
+    factory: Factory,
+}
+
+/*
+        let vertex_shader = {
+            let mut source = read_file_to_end("gpu/triangle.vert").unwrap();
+            source.push(0);
+            factory.program_object(
+                gpu::program::Kind::Vertex,
+                cstr(&source),
+            )
+        };
+        let fragment_shader = {
+            let mut source = read_file_to_end("gpu/triangle.frag").unwrap();
+            source.push(0);
+            factory.program_object(
+                gpu::program::Kind::Fragment,
+                cstr(&source),
+            )
+        };
+        let (program, block_binding, sampler_binding) = {
+            let prog = factory.program(
+                &vertex_shader,
+                &fragment_shader,
+            );
+            let bname = cstr(b"UniformBlock\0");
+            let bbinding = factory.query_uniform_block_index(&prog, bname);
+            let sname = cstr(b"u_Sampler\0");
+            let sbinding = factory.query_uniform_index(&prog, sname);
+            (prog, bbinding.unwrap() as usize, sbinding.unwrap() as usize)
+        };
+
+        let vertex_buffer = factory.buffer(gpu::buffer::Kind::Array, gpu::buffer::Usage::StaticDraw);
+        factory.initialize_buffer(&vertex_buffer, TRIANGLE_DATA);
+
+        let uniform_buffer = factory.buffer(gpu::buffer::Kind::Uniform, gpu::buffer::Usage::DynamicDraw);
+        factory.initialize_buffer(&uniform_buffer, YELLOW);
+        
+        let position_accessor = gpu::buffer::Accessor::new(vertex_buffer, POSITION_FORMAT, 0, 0);
+        let mut vertex_array_builder = gpu::VertexArray::builder();
+        vertex_array_builder.attributes.insert(0, position_accessor);
+        let vertex_array = factory.vertex_array(vertex_array_builder);
+
+        let texture = factory.texture2(Default::default());
+        factory.initialize_texture2(
+            &texture,
+            true,
+            0x1908, // gl::RGBA8,
+            1,
+            1,
+            0x1908, // gl::RGBA,
+            0x1401, // gl::UNSIGNED_BYTE,
+            GREEN_PIXEL,
+        );
+            
+        let sampler = gpu::Sampler::from_texture2(texture);
+*/
 
 impl Renderer {
+    pub fn new(factory: Factory) -> Self {
+        Self { factory }
+    }
+
+    fn make_invocation<'a>(
+        program: &'a gpu::Program,
+        _material: Material,
+    ) -> gpu::program::Invocation<'a> {
+        let uniforms = [None, None, None, None];
+        let samplers = [None, None, None, None];
+        gpu::program::Invocation {
+            program,
+            uniforms,
+            samplers,
+        }
+    }
+
+    /// Render everything in the scene as viewed by the given camera.
+    pub fn render(
+        &mut self,
+        scene: &Scene,
+        _camera: &Camera,
+    ) {
+        let mut hub = scene.hub.lock().expect("acquire hub lock");
+        let scene_id = hub.nodes[&scene.object.node].scene_id;
+
+        hub.process_messages();
+        hub.update_graph();
+
+        for node in hub.nodes.iter_mut() {
+            if !node.visible || node.scene_id != scene_id {
+                continue;
+            }
+            if let SubNode::Visual(ref data) = node.sub_node {
+                let invocation = Self::make_invocation(
+                    &data.program,
+                    data.material.clone(),
+                );
+                let draw_call = gpu::DrawCall {
+                    primitive: gpu::Primitive::Triangles,
+                    mode: data.mode,
+                    offset: data.range.start,
+                    count: data.range.end - data.range.start,
+                };
+                self.factory.draw(
+                    &data.vertex_array,
+                    &draw_call,
+                    &invocation,
+                );
+            }
+        }
+    }
+
+    pub(crate) fn resize(
+        &mut self,
+        _window: &glutin::GlWindow,
+    ) {
+        println!("resize");
+    }
+
+    /// Returns current viewport aspect ratio, i.e. width / height.
+    pub fn aspect_ratio(&self) -> f32 {
+        1.0 // self.size.0 as f32 / self.size.1 as f32
+    }
+
+    /// Map screen pixel coordinates to Normalized Display Coordinates.
+    /// The lower left corner corresponds to (-1,-1), and the upper right corner
+    /// corresponds to (1,1).
+    pub fn map_to_ndc<P: Into<mint::Point2<f32>>>(
+        &self,
+        _point: P,
+    ) -> mint::Point2<f32> {
+        /*
+        let point = point.into();
+        mint::Point2 {
+            x: 2.0 * point.x / self.size.0 as f32 - 1.0,
+            y: 1.0 - 2.0 * point.y / self.size.1 as f32,
+        }
+         */
+        mint::Point2 { x: 0.0, y: 0.0 }
+    }
+}
+
+/*
+impl OldRenderer {
     #[cfg(feature = "opengl")]
     pub(crate) fn new(
         builder: glutin::WindowBuilder,
@@ -486,6 +864,8 @@ impl Renderer {
         source: &source::Set,
     ) -> (Self, glutin::GlWindow, Factory) {
         use gfx::texture as t;
+        use glutin::GlContext;
+        
         let (window, device, mut gl_factory, out_color, out_depth) = gfx_window_glutin::init(builder, context, event_loop);
         let (_, srv_white) = gl_factory
             .create_texture_immutable::<gfx::format::Rgba8>(t::Kind::D2(1, 1, t::AaMode::Single), t::Mipmap::Provided, &[&[[0xFF; 4]]])
@@ -521,7 +901,7 @@ impl Renderer {
         let pbr_buf = gl_factory.create_constant_buffer(1);
         let displacement_contributions_buf = gl_factory.create_constant_buffer(MAX_TARGETS);
         let pso = PipelineStates::init(source, &mut gl_factory).unwrap();
-        let renderer = Renderer {
+        let renderer = OldRenderer {
             device,
             encoder,
             const_buf,
@@ -588,7 +968,7 @@ impl Renderer {
     }
 
     /// See [`Window::render`](struct.Window.html#method.render).
-    pub fn render(
+    pub fn old_render(
         &mut self,
         scene: &Scene,
         camera: &Camera,
@@ -1103,3 +1483,4 @@ impl Renderer {
         }))
     }
 }
+*/

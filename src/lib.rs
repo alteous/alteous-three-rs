@@ -254,17 +254,15 @@
 //! [`Window`]: window/struct.Window.html
 
 extern crate arrayvec;
-#[macro_use]
-extern crate bitflags;
 extern crate cgmath;
 extern crate froggy;
 extern crate genmesh;
-#[macro_use]
 extern crate gfx;
 extern crate gfx_glyph;
 extern crate gltf;
 extern crate gltf_importer;
 extern crate gltf_utils;
+extern crate gpu;
 extern crate image;
 extern crate includedir;
 #[macro_use]
@@ -274,7 +272,6 @@ extern crate log;
 extern crate mint;
 extern crate obj;
 extern crate phf;
-#[macro_use]
 extern crate quick_error;
 extern crate rodio;
 extern crate vec_map;
@@ -289,6 +286,12 @@ extern crate glutin;
 #[macro_use]
 mod macros;
 
+use std::os::raw::c_void;
+
+pub trait Context {
+    fn query_proc_address(&self, symbol: &str) -> *const c_void;
+}
+
 pub mod audio;
 pub mod animation;
 pub mod camera;
@@ -301,7 +304,7 @@ pub mod geometry;
 mod group;
 mod hub;
 mod input;
-pub mod light;
+//pub mod light;
 pub mod material;
 mod mesh;
 mod node;
@@ -310,7 +313,7 @@ pub mod render;
 pub mod scene;
 pub mod skeleton;
 mod sprite;
-mod text;
+//mod text;
 mod texture;
 mod util;
 #[cfg(feature = "opengl")]
@@ -359,12 +362,15 @@ pub use scene::{Background, Scene};
 #[doc(inline)]
 pub use sprite::Sprite;
 
-#[doc(inline)]
-pub use text::{Align, Font, Layout, Text};
+// #[doc(inline)]
+// pub use text::{Align, Font, Layout, Text};
 
-#[doc(inline)]
-pub use texture::{CubeMap, CubeMapPath, FilterMethod, Sampler, Texture, WrapMode};
+// #[doc(inline)]
+// pub use texture::{CubeMap, CubeMapPath, FilterMethod, Sampler, Texture, WrapMode};
 
 #[cfg(feature = "opengl")]
 #[doc(inline)]
 pub use window::Window;
+
+pub use gpu::Texture2 as Texture;
+pub use gpu::texture::{Filter as FilterMethod, Wrap as WrapMode};

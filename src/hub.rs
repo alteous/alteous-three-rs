@@ -1,21 +1,37 @@
 use audio::{AudioData, Operation as AudioOperation};
-use color::{self, Color};
-use light::{ShadowMap, ShadowProjection};
+use color::Color;
+//use light::{ShadowMap, ShadowProjection};
 use material::{self, Material};
-use mesh::{DynamicMesh, MAX_TARGETS};
+use mesh::MAX_TARGETS;
 use node::{NodeInternal, NodePointer};
 use object;
-use render::{BackendResources, GpuData};
+use render::DisplacementContribution;
 use skeleton::{Bone, Skeleton};
-use text::{Operation as TextOperation, TextData};
+// use text::{Operation as TextOperation, TextData};
 
 use cgmath::Transform;
 use froggy;
-use gfx;
+use gpu;
 use mint;
 
+use std::ops;
 use std::sync::{Arc, Mutex};
 use std::sync::{atomic, mpsc};
+
+//TODO: private fields?
+#[derive(Clone, Debug)]
+pub(crate) struct GpuData {
+    pub range: ops::Range<usize>,
+    pub vertex_array: gpu::VertexArray,
+    pub pending: Option<DynamicData>,
+    pub displacement_contributions: [DisplacementContribution; MAX_TARGETS],
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DynamicData {
+    pub num_vertices: usize,
+    pub buffer: gpu::Buffer,
+}
 
 #[derive(Clone, Debug)]
 pub(crate) enum SubLight {
@@ -25,6 +41,7 @@ pub(crate) enum SubLight {
     Point,
 }
 
+/*
 #[derive(Clone, Debug)]
 pub(crate) struct LightData {
     pub color: Color,
@@ -32,38 +49,48 @@ pub(crate) struct LightData {
     pub sub_light: SubLight,
     pub shadow: Option<(ShadowMap, ShadowProjection)>,
 }
+*/
 
 #[derive(Clone, Debug)]
 pub(crate) struct SkeletonData {
     pub bones: Vec<Bone>,
     pub inverse_bind_matrices: Vec<mint::ColumnMatrix4<f32>>,
-
-    pub gpu_buffer_view: gfx::handle::ShaderResourceView<BackendResources, [f32; 4]>,
-    pub gpu_buffer: gfx::handle::Buffer<BackendResources, [f32; 4]>,
+    pub gpu_buffer: gpu::Buffer,
     pub cpu_buffer: Vec<[f32; 4]>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct VisualData {
     pub material: Material,
-    pub gpu: GpuData,
     pub skeleton: Option<Skeleton>,
+
+    // Draw parameters
+    pub program: gpu::Program,
+    pub range: ops::Range<usize>,
+    pub mode: gpu::Mode,
+    pub vertex_array: gpu::VertexArray,
 }
 
 #[derive(Debug)]
 pub(crate) enum SubNode {
     /// No extra data, such as in the case of `Group`.
     Empty,
-    /// Audio data.
-    Audio(AudioData),
-    /// Renderable text for 2D user interface.
-    UiText(TextData),
-    /// Renderable 3D content, such as a mesh.
-    Visual(Material, GpuData, Option<Skeleton>),
-    /// Lighting information for illumination and shadow casting.
-    Light(LightData),
+
     /// Marks the root object of a `Scene`.
     Scene,
+
+    /// Audio data.
+    Audio(AudioData),
+
+    // Renderable text for 2D user interface.
+    //UiText(TextData),
+
+    /// Renderable 3D content, such as a mesh.
+    Visual(VisualData),
+
+    // Lighting information for illumination and shadow casting.
+    //Light(LightData),
+
     /// Array of `Bone` instances that may be bound to a `Skinned` mesh.
     Skeleton(SkeletonData),
 }
@@ -73,7 +100,7 @@ pub(crate) enum Operation {
     SetAudio(AudioOperation),
     SetParent(NodePointer),
     SetVisible(bool),
-    SetText(TextOperation),
+    // SetText(TextOperation),
     SetTransform(
         Option<mint::Point3<f32>>,
         Option<mint::Quaternion<f32>>,
@@ -81,12 +108,12 @@ pub(crate) enum Operation {
     ),
     SetMaterial(Material),
     SetSkeleton(Skeleton),
-    SetShadow(ShadowMap, ShadowProjection),
+    // SetShadow(ShadowMap, ShadowProjection),
     SetTexelRange(mint::Point2<i16>, mint::Vector2<u16>),
     SetWeights([f32; MAX_TARGETS]),
 }
 
-pub(crate) type HubPtr = Arc<Mutex<Hub>>;
+pub(crate) type Pointer = Arc<Mutex<Hub>>;
 
 pub(crate) struct Hub {
     pub(crate) nodes: froggy::Storage<NodeInternal>,
@@ -95,7 +122,7 @@ pub(crate) struct Hub {
 }
 
 impl Hub {
-    pub(crate) fn new() -> HubPtr {
+    pub(crate) fn new() -> Pointer {
         let (tx, rx) = mpsc::channel();
         let hub = Hub {
             nodes: froggy::Storage::new(),
@@ -143,13 +170,11 @@ impl Hub {
 
     pub(crate) fn spawn_visual(
         &mut self,
-        mat: Material,
-        gpu_data: GpuData,
-        skeleton: Option<Skeleton>,
+        visual_data: VisualData,
     ) -> object::Base {
-        self.spawn(SubNode::Visual(mat, gpu_data, skeleton))
+        self.spawn(SubNode::Visual(visual_data))
     }
-
+/*
     pub(crate) fn spawn_light(
         &mut self,
         data: LightData,
@@ -163,7 +188,7 @@ impl Hub {
     ) -> object::Base {
         self.spawn(SubNode::UiText(text))
     }
-
+*/
     pub(crate) fn spawn_audio_source(
         &mut self,
         data: AudioData,
@@ -219,45 +244,49 @@ impl Hub {
                     }
                 }
                 Operation::SetMaterial(material) => {
-                    if let SubNode::Visual(ref mut mat, _, _) = self.nodes[&ptr].sub_node {
-                        *mat = material;
+                    if let SubNode::Visual(ref mut data) = self.nodes[&ptr].sub_node {
+                        data.material = material;
                     }
                 },
                 Operation::SetTexelRange(base, size) => {
-                    if let SubNode::Visual(ref mut material, _, _) = self.nodes[&ptr].sub_node {
-                        match *material {
-                            material::Material::Sprite(ref mut params) => params.map.set_texel_range(base, size),
+                    if let SubNode::Visual(ref mut data) = self.nodes[&ptr].sub_node {
+                        match &mut data.material {
+                           &mut  material::Material::Sprite(ref mut params) => params.map.set_texel_range(base, size),
                             _ => panic!("Unsupported material for texel range request"),
                         }
                     }
                 },
+                /*
                 Operation::SetText(operation) => {
                     if let SubNode::UiText(ref mut data) = self.nodes[&ptr].sub_node {
                         Hub::process_text(operation, data);
                     }
                 },
+                 */
                 Operation::SetSkeleton(skeleton) => {
-                    if let SubNode::Visual(_, _, ref mut s) = self.nodes[&ptr].sub_node {
-                        *s = Some(skeleton);
+                    if let SubNode::Visual(ref mut data) = self.nodes[&ptr].sub_node {
+                        data.skeleton = Some(skeleton);
                     }
                 },
+                /*
                 Operation::SetShadow(map, proj) => {
                     if let SubNode::Light(ref mut data) = self.nodes[&ptr].sub_node {
                         data.shadow = Some((map, proj));
                     }
                 },
+
                 Operation::SetWeights(weights) => {
-                    fn set_weights(gpu_data: &mut GpuData, weights: [f32; MAX_TARGETS]) {
+                    fn set_weights(data: &mut VisualData, weights: [f32; MAX_TARGETS]) {
                         for i in 0 .. MAX_TARGETS {
-                            gpu_data.displacement_contributions[i].weight = weights[i];
+                            data.displacement_contributions[i].weight = weights[i];
                         }
                     }
 
                     // Hack around borrow checker rules:
                     // if
                     {
-                        if let SubNode::Visual(_, ref mut gpu_data, _) = self.nodes[&ptr].sub_node {
-                            set_weights(gpu_data, weights);
+                        if let SubNode::Visual(ref mut data) = self.nodes[&ptr].sub_node {
+                            set_weights(data, weights);
                             continue;
                         }
                     }
@@ -266,13 +295,15 @@ impl Hub {
                         for item in self.nodes.iter_mut() {
                             let update = item.parent.as_ref() == Some(&ptr);
                             if update {
-                                if let SubNode::Visual(_, ref mut gpu_data, _) = item.sub_node {
-                                    set_weights(gpu_data, weights);
+                                if let SubNode::Visual(ref mut data) = item.sub_node {
+                                    set_weights(data, weights);
                                 }
                             }
                         }
                     }
                 }
+                 */
+                _ => unimplemented!(),
             }
         }
         self.nodes.sync_pending();
@@ -290,7 +321,7 @@ impl Hub {
             AudioOperation::SetVolume(volume) => data.source.set_volume(volume),
         }
     }
-
+/*
     fn process_text(
         operation: TextOperation,
         data: &mut TextData,
@@ -311,7 +342,7 @@ impl Hub {
             TextOperation::Text(text) => data.section.text[0].text = text,
         }
     }
-
+*/
     pub(crate) fn update_graph(&mut self) {
         let mut cursor = self.nodes.cursor();
         while let Some((left, mut item, _)) = cursor.next() {
@@ -338,14 +369,15 @@ impl Hub {
             item.world_transform = transform;
         }
     }
-
+/*
     pub(crate) fn update_mesh(
         &mut self,
         mesh: &DynamicMesh,
     ) {
         match self.get_mut(&mesh).sub_node {
-            SubNode::Visual(_, ref mut gpu_data, _) => gpu_data.pending = Some(mesh.dynamic.clone()),
+            SubNode::Visual(ref mut data, _) => data.pending = Some(mesh.dynamic.clone()),
             _ => unreachable!(),
         }
     }
+*/
 }

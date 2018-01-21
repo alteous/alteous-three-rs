@@ -1,36 +1,28 @@
 //! Primitives for creating and controlling [`Window`](struct.Window.html).
 
 use glutin;
-use glutin::GlContext;
+use glutin::{GlContext, GlWindow};
 use mint;
 use render;
 
-use camera::Camera;
 use factory::Factory;
 use input::Input;
 use render::Renderer;
-use scene::Scene;
 use std::path::PathBuf;
+use std::os::raw::c_void;
 
 /// `Window` is the core entity of every `three-rs` application.
 ///
 /// It provides [user input](struct.Window.html#method.update),
 /// [`Factory`](struct.Factory.html) and [`Renderer`](struct.Renderer.html).
 pub struct Window {
-    event_loop: glutin::EventsLoop,
     window: glutin::GlWindow,
-    /// See [`Input`](struct.Input.html).
-    pub input: Input,
-    /// See [`Renderer`](struct.Renderer.html).
-    pub renderer: Renderer,
-    /// See [`Factory`](struct.Factory.html).
-    pub factory: Factory,
-    /// See [`Scene`](struct.Scene.html).
-    pub scene: Scene,
-    /// Reset input on each frame? See [`Input::reset`](struct.Input.html#method.reset).
-    ///
-    /// Defaults to `true`.
-    pub reset_input: bool,
+}
+
+impl ::Context for Window {
+    fn query_proc_address(&self, symbol: &str) -> *const c_void {
+        self.window.get_proc_address(symbol) as *const c_void
+    }
 }
 
 /// Builder for creating new [`Window`](struct.Window.html) with desired parameters.
@@ -93,10 +85,10 @@ impl Builder {
     }
 
     /// Create new `Window` with desired parameters.
-    pub fn build(&mut self) -> Window {
-        let event_loop = glutin::EventsLoop::new();
+    pub fn build(&mut self) -> (Window, Input, Renderer, Factory) {
+        let events_loop = glutin::EventsLoop::new();
         let builder = if self.fullscreen {
-            let monitor_id = event_loop.get_primary_monitor();
+            let monitor_id = events_loop.get_primary_monitor();
             glutin::WindowBuilder::new().with_fullscreen(Some(monitor_id))
         } else {
             glutin::WindowBuilder::new()
@@ -143,23 +135,19 @@ impl Builder {
             try_override!(basic, gouraud, pbr, phong, quad, shadow, skybox, sprite,);
         }
 
-        let (renderer, window, mut factory) = Renderer::new(builder, context, &event_loop, &source_set);
-        let scene = factory.scene();
-        Window {
-            event_loop,
-            window,
-            input: Input::new(),
-            renderer,
-            factory,
-            scene,
-            reset_input: true,
-        }
+        let glx = GlWindow::new(builder, context, &events_loop).unwrap();
+        unsafe { glx.make_current().expect("GL context bind failed") };
+        let window = Window {  window: glx };
+        let factory = Factory::new(&window);
+        let renderer = Renderer::new(factory.clone());
+        let input = Input::new(events_loop);
+        (window, input, renderer, factory)
     }
 }
 
 impl Window {
     /// Create a new window with default parameters.
-    pub fn new<T: Into<String>>(title: T) -> Self {
+    pub fn new<T: Into<String>>(title: T) -> (Self, Input, Renderer, Factory) {
         Self::builder(title).build()
     }
 
@@ -175,62 +163,9 @@ impl Window {
         }
     }
 
-    /// `update` method returns `false` if the window was closed.
-    pub fn update(&mut self) -> bool {
-        let mut running = true;
-        let renderer = &mut self.renderer;
-        let input = &mut self.input;
-        if self.reset_input {
-            input.reset();
-        }
-
+    /// Presents the front buffer.
+    pub fn swap_buffers(&mut self) {
         self.window.swap_buffers().unwrap();
-        let window = &self.window;
-
-        self.event_loop.poll_events(|event| {
-            use glutin::WindowEvent::{Closed, Focused, KeyboardInput, MouseInput, CursorMoved, MouseWheel, Resized};
-            match event {
-                glutin::Event::WindowEvent { event, .. } => match event {
-                    Resized(..) => renderer.resize(window),
-                    Focused(state) => input.window_focus(state),
-                    Closed => running = false,
-                    KeyboardInput {
-                        input: glutin::KeyboardInput {
-                            state,
-                            virtual_keycode: Some(keycode),
-                            ..
-                        },
-                        ..
-                    } => input.keyboard_input(state, keycode),
-                    MouseInput { state, button, .. } => input.mouse_input(state, button),
-                    CursorMoved {
-                        position: (x, y), ..
-                    } => input.mouse_moved(
-                        [x as f32, y as f32].into(),
-                        renderer.map_to_ndc([x as f32, y as f32]),
-                    ),
-                    MouseWheel { delta, .. } => input.mouse_wheel_input(delta),
-                    _ => {}
-                },
-                glutin::Event::DeviceEvent { event, .. } => match event {
-                    glutin::DeviceEvent::Motion { axis, value } => {
-                        input.axis_moved_raw(axis as u8, value as f32);
-                    }
-                    _ => {}
-                },
-                _ => {}
-            }
-        });
-
-        running
-    }
-
-    /// Render the current scene with specific [`Camera`](struct.Camera.html).
-    pub fn render(
-        &mut self,
-        camera: &Camera,
-    ) {
-        self.renderer.render(&self.scene, camera);
     }
 
     /// Get current window size in pixels.

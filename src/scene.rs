@@ -1,9 +1,10 @@
 //! `Scene` and `SyncGuard` structures.
 
+use hub;
 use object;
 
 use color::Color;
-use hub::{Hub, HubPtr};
+use hub::Hub;
 use node::Node;
 use object::Object;
 use texture::{CubeMap, Texture};
@@ -20,9 +21,9 @@ pub enum Background {
     Color(Color),
     /// Texture background, covers the whole screen.
     // TODO: different wrap modes?
-    Texture(Texture<[f32; 4]>),
+    Texture(Texture),
     /// Skybox
-    Skybox(CubeMap<[f32; 4]>),
+    Skybox(CubeMap),
 }
 
 /// The root node of a tree of game objects that may be rendered by a [`Camera`].
@@ -30,7 +31,7 @@ pub enum Background {
 /// [`Camera`]: ../camera/struct.Camera.html
 pub struct Scene {
     pub(crate) object: object::Base,
-    pub(crate) hub: HubPtr,
+    pub(crate) hub: hub::Pointer,
     /// See [`Background`](struct.Background.html).
     pub background: Background,
 }
