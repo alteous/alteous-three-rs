@@ -12,7 +12,6 @@ use mint;
 use object;
 use render;
 use scene;
-use util;
 
 use camera::Camera;
 use geometry::Geometry;
@@ -74,24 +73,11 @@ const QUAD: [Vertex; 4] = [
 pub type MapVertices<'a> = gfx::mapping::Writer<'a, BackendResources, Vertex>;
 */
 
-#[derive(Clone)]
-struct Basic {
-    program: gpu::Program,
-    uniform_block_binding: usize,
-    sampler_binding: usize,
-}
-
-#[derive(Clone)]
-struct Programs {
-    basic: Basic,
-}
-
 /// `Factory` is used to instantiate game objects.
 #[derive(Clone)]
 pub struct Factory {
     backend: gpu::Factory,
     hub: hub::Pointer,
-    programs: Programs,
 }
 
 /*
@@ -169,45 +155,9 @@ impl Factory {
     pub fn new<T: ::Context>(ctx: &T) -> Self {
         let backend = gpu::Factory::new(|sym| ctx.query_proc_address(sym));
         let hub = Hub::new();
-    
-        let vertex_shader = {
-            let mut source = util::read_file_to_end("shader.vert").unwrap();
-            source.push(0);
-            backend.program_object(
-                gpu::program::Kind::Vertex,
-                util::cstr(&source),
-            )
-        };
-        let fragment_shader = {
-            let mut source = util::read_file_to_end("shader.frag").unwrap();
-            source.push(0);
-            backend.program_object(
-                gpu::program::Kind::Fragment,
-                util::cstr(&source),
-            )
-        };
-        let (program, uniform_block_binding, sampler_binding) = {
-            let prog = backend.program(
-                &vertex_shader,
-                &fragment_shader,
-            );
-            let bname = util::cstr(b"UniformBlock\0");
-            let bbinding = 0; // backend.query_uniform_block_index(&prog, bname);
-            let sname = util::cstr(b"u_Sampler\0");
-            let sbinding = 0; // backend.query_uniform_index(&prog, sname);
-            (prog, bbinding, sbinding)
-        };
-
         Factory {
             backend,
             hub,
-            programs: Programs {
-                basic: Basic {
-                    program,
-                    uniform_block_binding,
-                    sampler_binding,
-                },
-            },
         }
     }
 
@@ -220,7 +170,7 @@ impl Factory {
         let material = material.into();
         let vertices = render::make_vertices(&geometry);
         let visual_data = if geometry.faces.is_empty() {
-            let program = self.programs.basic.program.clone();
+            let pipeline = render::Pipeline::Basic;
             let mode = gpu::Mode::Arrays;
             let range = 0 .. vertices.len();
             let vertex_array = render::make_vertex_array(
@@ -232,14 +182,14 @@ impl Factory {
             hub::VisualData {
                 material,
                 skeleton,
-                program,
+                pipeline,
                 mode,
                 range,
                 vertex_array,
             }
         } else {
             let indices = geometry.faces.as_slice();
-            let program = self.programs.basic.program.clone();
+            let pipeline = render::Pipeline::Basic;
             let mode = gpu::Mode::Elements;
             let range = 0 .. 3 * indices.len();
             let vertex_array = render::make_vertex_array(
@@ -251,7 +201,7 @@ impl Factory {
             hub::VisualData {
                 material,
                 skeleton,
-                program,
+                pipeline,
                 mode,
                 range,
                 vertex_array,

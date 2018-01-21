@@ -13,6 +13,7 @@ use cgmath::Transform;
 use froggy;
 use gpu;
 use mint;
+use render;
 
 use std::ops;
 use std::sync::{Arc, Mutex};
@@ -65,7 +66,7 @@ pub(crate) struct VisualData {
     pub skeleton: Option<Skeleton>,
 
     // Draw parameters
-    pub program: gpu::Program,
+    pub pipeline: render::Pipeline,
     pub range: ops::Range<usize>,
     pub mode: gpu::Mode,
     pub vertex_array: gpu::VertexArray,

@@ -5,6 +5,7 @@ use gfx::format::I8Norm;
 use gpu;
 use glutin;
 use mint;
+use util;
 use itertools::Either;
 
 pub mod source;
@@ -711,8 +712,27 @@ const GREEN_PIXEL: &'static [[u8; 4]] = &[
     [0, 255, 0, 255],
 ];
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Pipeline {
+    /// Basic program pipeline.
+    Basic,
+}
+
+#[derive(Clone)]
+struct Basic {
+    program: gpu::Program,
+    uniform_block_binding: usize,
+    sampler_binding: usize,
+}
+
+#[derive(Clone)]
+struct Programs {
+    basic: Basic,
+}
+
 pub struct Renderer {
     factory: Factory,
+    programs: Programs,
 }
 
 /*
@@ -771,13 +791,51 @@ pub struct Renderer {
 */
 
 impl Renderer {
+    /// Constructor.
     pub fn new(factory: Factory) -> Self {
-        Self { factory }
+        let vertex_shader = {
+            let mut source = util::read_file_to_end("shader.vert").unwrap();
+            source.push(0);
+            factory.program_object(
+                gpu::program::Kind::Vertex,
+                util::cstr(&source),
+            )
+        };
+        let fragment_shader = {
+            let mut source = util::read_file_to_end("shader.frag").unwrap();
+            source.push(0);
+            factory.program_object(
+                gpu::program::Kind::Fragment,
+                util::cstr(&source),
+            )
+        };
+        let (program, uniform_block_binding, sampler_binding) = {
+            let prog = factory.program(
+                &vertex_shader,
+                &fragment_shader,
+            );
+            //let bname = util::cstr(b"UniformBlock\0");
+            let bbinding = 0; // factory.query_uniform_block_index(&prog, bname);
+            //let sname = util::cstr(b"u_Sampler\0");
+            let sbinding = 0; // factory.query_uniform_index(&prog, sname);
+            (prog, bbinding, sbinding)
+        };
+        let programs = Programs {
+            basic: Basic {
+                program,
+                uniform_block_binding,
+                sampler_binding,
+            },
+        };
+        Self {
+            factory,
+            programs,
+        }
     }
 
     fn make_invocation<'a>(
         program: &'a gpu::Program,
-        _material: Material,
+        _material: &Material,
     ) -> gpu::program::Invocation<'a> {
         let uniforms = [None, None, None, None];
         let samplers = [None, None, None, None];
@@ -805,10 +863,11 @@ impl Renderer {
                 continue;
             }
             if let SubNode::Visual(ref data) = node.sub_node {
-                let invocation = Self::make_invocation(
-                    &data.program,
-                    data.material.clone(),
-                );
+                let material = &data.material;
+                let program = match data.pipeline {
+                    Pipeline::Basic => &self.programs.basic.program,
+                };
+                let invocation = Self::make_invocation(program, material);
                 let draw_call = gpu::DrawCall {
                     primitive: gpu::Primitive::Triangles,
                     mode: data.mode,
