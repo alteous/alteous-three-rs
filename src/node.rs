@@ -1,10 +1,8 @@
 use cgmath;
 use froggy;
 use mint;
-use scene;
 
 use hub::SubNode;
-use material::Material;
 
 /// Pointer to a Node
 pub(crate) type NodePointer = froggy::Pointer<NodeInternal>;
@@ -24,28 +22,24 @@ pub(crate) struct NodeInternal {
     pub(crate) transform: TransformInternal,
     /// The transform relative to the world origin.
     pub(crate) world_transform: TransformInternal,
-    /// Pointer to node's parent.
-    pub(crate) parent: Option<NodePointer>,
-    /// The ID of the scene this node belongs to.
-    pub(crate) scene_id: Option<scene::Uid>,
     /// Context specific-data, for example, `UiText`, `Visual` or `Light`.
-    pub(crate) sub_node: SubNode,
+    pub(crate) sub_node: SubNode,    
+    /// Pointer to the next sibling.
+    pub(crate) next_sibling: Option<NodePointer>,
 }
 
+/*
 impl NodeInternal {
     pub(crate) fn to_node(&self) -> Node {
         Node {
-            transform: self.transform.into(),
-            world_transform: self.world_transform.into(),
             visible: self.visible,
             world_visible: self.world_visible,
-            material: match self.sub_node {
-                SubNode::Visual(ref data) => Some(data.material.clone()),
-                _ => None,
-            },
+            transform: self.transform.into(),
+            world_transform: self.world_transform.into(),
         }
     }
 }
+*/
 
 /// Position, rotation, and scale of the scene `Node`.
 #[derive(Clone, Debug, PartialEq)]
@@ -80,8 +74,6 @@ pub struct Node {
     pub visible: bool,
     /// The same as `visible`, used internally.
     pub world_visible: bool,
-    /// Material in case this `Node` has it.
-    pub material: Option<Material>,
 }
 
 impl From<SubNode> for NodeInternal {
@@ -91,9 +83,8 @@ impl From<SubNode> for NodeInternal {
             world_visible: false,
             transform: cgmath::Transform::one(),
             world_transform: cgmath::Transform::one(),
-            parent: None,
-            scene_id: None,
             sub_node: sub,
+            next_sibling: None,
         }
     }
 }

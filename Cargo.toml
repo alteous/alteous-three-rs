@@ -26,14 +26,14 @@ includedir_codegen = "0.2.0"
 arrayvec = "0.4"
 bitflags = "0.9"
 cgmath = { version = "0.15", features = ["mint"] }
-froggy = "0.4.4"
+froggy = { path = "../froggy", version = "0.4.4" }
 genmesh = "0.5"
 gfx = "0.17"
 gfx_glyph = "0.8"
 gltf = { features = ["names"], version = "0.10.0", git = "https://github.com/gltf-rs/gltf" }
 gltf-importer = { features = ["names"], version = "0.10.0", git = "https://github.com/gltf-rs/gltf" }
 gltf-utils = { features = ["names"], version = "0.10.0", git = "https://github.com/gltf-rs/gltf" }
-gpu = { git = "https://github.com/alteous/graphics" }
+gpu = { path = "../gpu"  }
 image = "0.13"
 includedir = "0.2"
 itertools = "0.6"

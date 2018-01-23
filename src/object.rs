@@ -8,8 +8,7 @@ use mint;
 
 use hub::{Message, Operation};
 use mesh::MAX_TARGETS;
-use node::{Node, NodePointer};
-use scene::Scene;
+use node::NodePointer;
 
 //Note: no local state should be here, only remote links
 /// `Base` represents a concrete entity that can be added to the scene.
@@ -33,7 +32,7 @@ pub struct Base {
 }
 
 /// Marks data structures that are able to added to the scene graph.
-pub trait Object: AsRef<Base> + AsMut<Base> {
+pub trait Object: AsRef<Base> {
     /// Converts into the base type.
     fn upcast(&self) -> Base {
         self.as_ref().clone()
@@ -41,15 +40,15 @@ pub trait Object: AsRef<Base> + AsMut<Base> {
 
     /// Invisible objects are not rendered by cameras.
     fn set_visible(
-        &mut self,
+        &self,
         visible: bool,
     ) {
-        self.as_mut().set_visible(visible)
+        self.as_ref().set_visible(visible)
     }
 
     /// Rotates object in the specific direction of `target`.
     fn look_at<E, T>(
-        &mut self,
+        &self,
         eye: E,
         target: T,
         up: Option<mint::Vector3<f32>>,
@@ -58,12 +57,12 @@ pub trait Object: AsRef<Base> + AsMut<Base> {
         E: Into<mint::Point3<f32>>,
         T: Into<mint::Point3<f32>>,
     {
-        self.as_mut().look_at(eye, target, up)
+        self.as_ref().look_at(eye, target, up)
     }
 
     /// Set both position, orientation and scale.
     fn set_transform<P, Q>(
-        &mut self,
+        &self,
         pos: P,
         rot: Q,
         scale: f32,
@@ -72,58 +71,37 @@ pub trait Object: AsRef<Base> + AsMut<Base> {
         P: Into<mint::Point3<f32>>,
         Q: Into<mint::Quaternion<f32>>,
     {
-        self.as_mut().set_transform(pos, rot, scale)
-    }
-
-    /// Add new [`Base`](struct.Base.html) to the group.
-    fn set_parent<P>(
-        &mut self,
-        parent: P,
-    ) where
-        Self: Sized,
-        P: AsRef<Base>,
-    {
-        self.as_mut().set_parent(parent)
+        self.as_ref().set_transform(pos, rot, scale)
     }
 
     /// Set position.
     fn set_position<P>(
-        &mut self,
+        &self,
         pos: P,
     ) where
         Self: Sized,
         P: Into<mint::Point3<f32>>,
     {
-        self.as_mut().set_position(pos)
+        self.as_ref().set_position(pos)
     }
 
     /// Set orientation.
     fn set_orientation<Q>(
-        &mut self,
+        &self,
         rot: Q,
     ) where
         Self: Sized,
         Q: Into<mint::Quaternion<f32>>,
     {
-        self.as_mut().set_orientation(rot)
+        self.as_ref().set_orientation(rot)
     }
 
     /// Set scale.
     fn set_scale(
-        &mut self,
+        &self,
         scale: f32,
     ) {
-        self.as_mut().set_scale(scale)
-    }
-
-    /// Get actual information about itself from the `scene`.
-    /// # Panics
-    /// Panics if `scene` doesn't have this `Base`.
-    fn sync(
-        &mut self,
-        scene: &Scene,
-    ) -> Node {
-        self.as_mut().sync(scene)
+        self.as_ref().set_scale(scale)
     }
 }
 
@@ -159,7 +137,7 @@ impl fmt::Debug for Base {
 impl Base {
     /// Invisible objects are not rendered by cameras.
     pub fn set_visible(
-        &mut self,
+        &self,
         visible: bool,
     ) {
         let msg = Operation::SetVisible(visible);
@@ -168,7 +146,7 @@ impl Base {
 
     /// Rotates object in the specific direction of `target`.
     pub fn look_at<E, T>(
-        &mut self,
+        &self,
         eye: E,
         target: T,
         up: Option<mint::Vector3<f32>>,
@@ -191,7 +169,7 @@ impl Base {
 
     /// Set both position, orientation and scale.
     pub fn set_transform<P, Q>(
-        &mut self,
+        &self,
         pos: P,
         rot: Q,
         scale: f32,
@@ -203,20 +181,9 @@ impl Base {
         let _ = self.tx.send((self.node.downgrade(), msg));
     }
 
-    /// Add new [`Base`](struct.Base.html) to the group.
-    pub fn set_parent<P>(
-        &mut self,
-        parent: P,
-    ) where
-        P: AsRef<Self>,
-    {
-        let msg = Operation::SetParent(parent.as_ref().node.clone());
-        let _ = self.tx.send((self.node.downgrade(), msg));
-    }
-
     /// Set position.
     pub fn set_position<P>(
-        &mut self,
+        &self,
         pos: P,
     ) where
         P: Into<mint::Point3<f32>>,
@@ -227,7 +194,7 @@ impl Base {
 
     /// Set orientation.
     pub fn set_orientation<Q>(
-        &mut self,
+        &self,
         rot: Q,
     ) where
         Q: Into<mint::Quaternion<f32>>,
@@ -238,7 +205,7 @@ impl Base {
 
     /// Set scale.
     pub fn set_scale(
-        &mut self,
+        &self,
         scale: f32,
     ) {
         let msg = Operation::SetTransform(None, None, Some(scale));
@@ -247,27 +214,11 @@ impl Base {
 
     /// Set weights.
     pub fn set_weights(
-        &mut self,
+        &self,
         weights: [f32; MAX_TARGETS],
     ) {
         let msg = Operation::SetWeights(weights);
         let _ = self.tx.send((self.node.downgrade(), msg));
-    }
-    
-    /// Get actual information about itself from the `scene`.
-    /// # Panics
-    /// Panics if `scene` doesn't have this `Base`.
-    pub fn sync(
-        &mut self,
-        scene: &Scene,
-    ) -> Node {
-        let mut hub = scene.hub.lock().unwrap();
-        hub.process_messages();
-        hub.update_graph();
-        let node = &hub.nodes[&self.node];
-        let root = &hub.nodes[&scene.object.node];
-        assert_eq!(node.scene_id, root.scene_id);
-        node.to_node()
     }
 }
 

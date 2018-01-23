@@ -7,7 +7,12 @@ layout(location = 3) in vec4 a_Tangent;
 layout(location = 4) in uvec4 a_JointIndices;
 layout(location = 5) in vec4 a_JointWeights;
 
+layout(std140) uniform b_Globals {
+    mat4 u_World;
+    mat4 u_ViewProjection;
+};
+
 void main()
 {
-    gl_Position = a_Position;
+    gl_Position = u_ViewProjection * u_World * a_Position;
 }

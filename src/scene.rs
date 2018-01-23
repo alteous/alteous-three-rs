@@ -1,18 +1,13 @@
 //! `Scene` and `SyncGuard` structures.
 
 use hub;
-use object;
 
 use color::Color;
-use hub::Hub;
-use node::Node;
+use node::NodePointer;
 use object::Object;
 use texture::{CubeMap, Texture};
 
-use std::sync::MutexGuard;
-
-/// Unique identifier for a scene.
-pub type Uid = usize;
+use std::mem;
 
 /// Background type.
 #[derive(Clone, Debug, PartialEq)]
@@ -30,13 +25,59 @@ pub enum Background {
 ///
 /// [`Camera`]: ../camera/struct.Camera.html
 pub struct Scene {
-    pub(crate) object: object::Base,
     pub(crate) hub: hub::Pointer,
+    pub(crate) first_child: Option<NodePointer>,
+
     /// See [`Background`](struct.Background.html).
     pub background: Background,
 }
-three_object!(Scene::object);
 
+impl Scene {
+    /// Add new [`Base`](struct.Base.html) to the scene.
+    pub fn add<T: Object>(
+        &mut self,
+        child: &T,
+    ) {
+        let mut hub = self.hub.lock().unwrap();
+        let node_ptr = child.as_ref().node.clone();
+        let child = &mut hub[child.as_ref()];
+
+        if child.next_sibling.is_some() {
+            error!("Element {:?} is added to a scene while still having old parent - {}",
+                   child.sub_node, "discarding siblings");
+        }
+
+        child.next_sibling = mem::replace(&mut self.first_child, Some(node_ptr));
+    }
+
+    /// Remove a previously added [`Base`](struct.Base.html) from the scene.
+    pub fn remove<T: Object>(
+        &mut self,
+        child: &T,
+    ) {
+        let target_maybe = Some(child.as_ref().node.clone());
+        let mut hub = self.hub.lock().unwrap();
+        let next_sibling = hub[child.as_ref()].next_sibling.clone();
+
+        if self.first_child == target_maybe {
+            self.first_child = next_sibling;
+            return;
+        }
+
+        let mut cur_ptr = self.first_child.clone();
+        while let Some(ptr) = cur_ptr.take() {
+            let node = &mut hub.nodes[&ptr];
+            if node.next_sibling == target_maybe {
+                node.next_sibling = next_sibling;
+                return;
+            }
+            cur_ptr = node.next_sibling.clone(); //TODO: avoid clone
+        }
+
+        error!("Unable to find child for removal");
+    }
+}
+/*
 /// `SyncGuard` is used to obtain information about scene nodes in the most effective way.
 ///
 /// # Examples
@@ -112,7 +153,6 @@ three_object!(Scene::object);
 /// [`object::Base::sync`]: ../object/struct.Base.html#method.sync
 pub struct SyncGuard<'a> {
     hub: MutexGuard<'a, Hub>,
-    scene_id: Option<Uid>,
 }
 
 impl<'a> SyncGuard<'a> {
@@ -145,3 +185,4 @@ impl Scene {
         SyncGuard { hub, scene_id }
     }
 }
+*/

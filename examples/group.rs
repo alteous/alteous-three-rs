@@ -5,6 +5,18 @@ extern crate three;
 use cgmath::{Angle, Decomposed, One, Quaternion, Rad, Rotation3, Transform, Vector3};
 use three::Object;
 
+macro_rules! three_object {
+    ($ty:ident::$id:ident) => {
+        impl AsRef<::three::object::Base> for $ty {
+            fn as_ref(&self) -> &::three::object::Base {
+                self.$id.as_ref()
+            }
+        }
+
+        impl ::three::Object for $ty {}
+    };
+}
+
 struct Level {
     speed: f32,
 }
@@ -15,6 +27,7 @@ struct Cube {
     level_id: usize,
     orientation: Quaternion<f32>,
 }
+three_object!(Cube::group);
 
 fn create_cubes(
     factory: &mut three::Factory,
@@ -31,7 +44,7 @@ fn create_cubes(
         let mut mesh = factory.mesh(geometry.clone(), materials[0].clone());
         group.set_position([0.0, 0.0, 1.0]);
         group.set_scale(2.0);
-        mesh.set_parent(&group);
+        group.add(&mesh);
         Cube {
             group,
             mesh,
@@ -80,14 +93,14 @@ fn create_cubes(
             let mat = materials[next.mat_id].clone();
             let mut cube = Cube {
                 group: factory.group(),
-                mesh: factory.mesh_instance_with_material(&list[0].mesh, mat),
+                mesh: factory.mesh_duplicate(&list[0].mesh, mat),
                 level_id: next.lev_id,
                 orientation: child.rot,
             };
             let p: mint::Vector3<f32> = child.disp.into();
             cube.group.set_transform(p, child.rot, child.scale);
-            cube.group.set_parent(&list[next.parent_id].group);
-            cube.mesh.set_parent(&cube.group);
+            list[next.parent_id].group.add(&cube.group);
+            cube.group.add(&cube.mesh);
             if next.mat_id + 1 < materials.len() && next.lev_id + 1 < levels.len() {
                 stack.push(Stack {
                     parent_id: list.len(),
@@ -114,27 +127,29 @@ const SPEEDS: [f32; 6] = [
 ];
 
 fn main() {
-    let mut (window, input, renderer, factory) = three::Window::new("Three-rs group example");
-    win.scene.background = three::Background::Color(0x204060);
+    let (mut window, mut input, mut renderer, mut factory) = three::Window::new("Three-rs group example");
+    let mut scene = factory.scene();
+    scene.background = three::Background::Color(0x204060);
 
-    let mut cam = factory.perspective_camera(60.0, 1.0 .. 100.0);
-    cam.look_at([-1.8, -8.0, 7.0], [0.0, 0.0, 3.5], None);
+    let camera = factory.perspective_camera(60.0, 1.0 .. 100.0);
+    camera.look_at([-1.8, -8.0, 7.0], [0.0, 0.0, 3.5], None);
 
-    let mut light = factory.point_light(0xffffff, 1.0);
+    let light = factory.point_light(0xffffff, 1.0);
     light.set_position([0.0, -10.0, 10.0]);
-    light.set_parent(&win.scene);
+    scene.add(&light);
 
     let materials: Vec<_> = COLORS
         .iter()
         .map(|&color| three::material::Lambert { color, flat: false })
         .collect();
     let levels: Vec<_> = SPEEDS.iter().map(|&speed| Level { speed }).collect();
-    let mut cubes = create_cubes(&mut win.factory, &materials, &levels);
-    cubes[0].group.set_parent(&win.scene);
+    let mut cubes = create_cubes(&mut factory, &materials, &levels);
+    scene.add(&cubes[0]);
 
-    let timer = win.input.time();
-    while win.update() && !win.input.hit(three::KEY_ESCAPE) {
-        let time = timer.get(&win.input);
+    let timer = input.time();
+    while !input.quit_requested() {
+        input.update();
+        let time = timer.get(&input);
         for cube in cubes.iter_mut() {
             let level = &levels[cube.level_id];
             let angle = Rad(time * level.speed);
@@ -142,6 +157,7 @@ fn main() {
             cube.group.set_orientation(q);
         }
 
-        win.render(&cam);
+        renderer.render(&scene, &camera);
+        window.swap_buffers();
     }
 }

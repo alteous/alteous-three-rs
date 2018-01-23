@@ -15,7 +15,7 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub(crate) fn new(total_size: [u32; 2]) -> Self {
+    pub(crate) fn _new(total_size: [u32; 2]) -> Self {
         Texture {
             total_size,
             tex0: [0.0; 2],
@@ -69,7 +69,7 @@ pub struct CubeMapPath<P: AsRef<Path>> {
 }
 
 impl<P: AsRef<Path>> CubeMapPath<P> {
-    pub(crate) fn as_array(&self) -> [&P; 6] {
+    pub(crate) fn _as_array(&self) -> [&P; 6] {
         [
             &self.right,
             &self.left,
@@ -87,7 +87,7 @@ impl<P: AsRef<Path>> CubeMapPath<P> {
 pub struct CubeMap;
 
 impl CubeMap {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn _new() -> Self {
         CubeMap
     }
 }

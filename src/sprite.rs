@@ -10,7 +10,7 @@ pub struct Sprite {
 three_object!(Sprite::object);
 
 impl Sprite {
-    pub(crate) fn new(object: object::Base) -> Self {
+    pub(crate) fn _new(object: object::Base) -> Self {
         Sprite { object }
     }
 

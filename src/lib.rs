@@ -288,7 +288,9 @@ mod macros;
 
 use std::os::raw::c_void;
 
+/// OpenGL context.
 pub trait Context {
+    /// Retrieve the corresponding function pointer for the given symbol.
     fn query_proc_address(&self, symbol: &str) -> *const c_void;
 }
 
@@ -304,7 +306,7 @@ pub mod geometry;
 mod group;
 mod hub;
 mod input;
-//pub mod light;
+pub mod light;
 pub mod material;
 mod mesh;
 mod node;
@@ -316,6 +318,7 @@ mod sprite;
 //mod text;
 mod texture;
 mod util;
+
 #[cfg(feature = "opengl")]
 pub mod window;
 

@@ -1,5 +1,6 @@
 //! The renderer.
 
+use color;
 use gfx;
 use gfx::format::I8Norm;
 use gpu;
@@ -55,6 +56,7 @@ macro_rules! offset_of {
     }
 }
 
+/// Basic vertex definition.
 #[allow(non_snake_case)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
@@ -92,6 +94,7 @@ const TANGENT_X: [I8Norm; 4] = [
 
 use factory::f2i;
 
+/// Compiles a set of vertices from geometry.
 pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
     let position_iter = geometry.vertices.iter();
     let normal_iter = if geometry.normals.is_empty() {
@@ -158,6 +161,7 @@ pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
 
 use gpu::buffer as buf;
 
+/// Compiles a GPU vertex array from a set of vertex and index data.
 pub fn make_vertex_array(
     factory: &gpu::Factory,
     indices: Option<&[[u32; 3]]>,
@@ -257,538 +261,61 @@ pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGE
     DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
 ];
 
-/*
-/// The format of the back buffer color requested from the windowing system.
-pub type ColorFormat = gfx::format::Rgba8;
-/// The format of the depth stencil buffer requested from the windowing system.
-pub type DepthFormat = gfx::format::DepthStencil;
-/// The format of the shadow buffer.
-pub type ShadowFormat = gfx::format::Depth32F;
-/// The concrete type of a basic pipeline.
-pub type BasicPipelineState = gfx::PipelineState<back::Resources, basic_pipe::Meta>;
-
-const MAX_LIGHTS: usize = 4;
-
-const STENCIL_SIDE: gfx::state::StencilSide = gfx::state::StencilSide {
-    fun: gfx::state::Comparison::Always,
-    mask_read: 0,
-    mask_write: 0,
-    op_fail: gfx::state::StencilOp::Keep,
-    op_depth_fail: gfx::state::StencilOp::Keep,
-    op_pass: gfx::state::StencilOp::Keep,
-};
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-quick_error! {
-    #[doc = "Error encountered when building pipelines."]
-    #[derive(Debug)]
-    pub enum PipelineCreationError {
-        #[doc = "GLSL compiler/linker error."]
-        Compilation(err: gfx::shade::ProgramError) {
-            from()
-            description("GLSL program compilation error")
-            display("GLSL program compilation error")
-            cause(err)
-        }
-
-        #[doc = "Pipeline state error."]
-        State(err: gfx::PipelineStateError<String>) {
-            from()
-            description("Pipeline state error")
-            display("Pipeline state error")
-            cause(err)
-        }
-
-        #[doc = "Standard I/O error."]
-        Io(err: io::Error) {
-            from()
-            description("I/O error")
-            display("I/O error")
-            cause(err)
-        }
-    }
-}
-
-/// Default values for type `Vertex`.
-pub const DEFAULT_VERTEX: Vertex = Vertex {
-    pos: [0.0, 0.0, 0.0, 1.0],
-    uv: [0.0, 0.0],
-    normal: [I8Norm(0), I8Norm(127), I8Norm(0), I8Norm(0)],
-    tangent: [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(0)],
-    joint_indices: [0.0, 0.0, 0.0, 0.0],
-    joint_weights: [1.0, 1.0, 1.0, 1.0],
-
-    displacement0: [0.0, 0.0, 0.0, 0.0],
-    displacement1: [0.0, 0.0, 0.0, 0.0],
-    displacement2: [0.0, 0.0, 0.0, 0.0],
-    displacement3: [0.0, 0.0, 0.0, 0.0],
-    displacement4: [0.0, 0.0, 0.0, 0.0],
-    displacement5: [0.0, 0.0, 0.0, 0.0],
-    displacement6: [0.0, 0.0, 0.0, 0.0],
-    displacement7: [0.0, 0.0, 0.0, 0.0],
-};
-
-impl Default for Vertex {
-    fn default() -> Self {
-        DEFAULT_VERTEX
-    }
-}
-
-#[cfg_attr(rustfmt, rustfmt_skip)]
-gfx_defines! {
-    vertex Vertex {
-        pos: [f32; 4] = "a_Position",
-        uv: [f32; 2] = "a_TexCoord",
-        normal: [gfx::format::I8Norm; 4] = "a_Normal",
-        tangent: [gfx::format::I8Norm; 4] = "a_Tangent",
-        joint_indices: [f32; 4] = "a_JointIndices",
-        joint_weights: [f32; 4] = "a_JointWeights",
-
-        displacement0: [f32; 4] = "a_Displacement0",
-        displacement1: [f32; 4] = "a_Displacement1",
-        displacement2: [f32; 4] = "a_Displacement2",
-        displacement3: [f32; 4] = "a_Displacement3",
-        displacement4: [f32; 4] = "a_Displacement4",
-        displacement5: [f32; 4] = "a_Displacement5",
-        displacement6: [f32; 4] = "a_Displacement6",
-        displacement7: [f32; 4] = "a_Displacement7",
-    }
-
-    constant Locals {
-        color: [f32; 4] = "u_Color",
-        mat_params: [f32; 4] = "u_MatParams",
-        uv_range: [f32; 4] = "u_UvRange",
-        mx_world: [[f32; 4]; 4] = "u_World",
-    }
-
-    constant LightParam {
-        projection: [[f32; 4]; 4] = "projection",
-        pos: [f32; 4] = "pos",
-        dir: [f32; 4] = "dir",
-        focus: [f32; 4] = "focus",
-        color: [f32; 4] = "color",
-        color_back: [f32; 4] = "color_back",
-        intensity: [f32; 4] = "intensity",
-        shadow_params: [i32; 4] = "shadow_params",
-    }
-
-    constant Globals {
-        mx_vp: [[f32; 4]; 4] = "u_ViewProj",
-        mx_inv_proj: [[f32; 4]; 4] = "u_InverseProj",
-        mx_view: [[f32; 4]; 4] = "u_View",
-        num_lights: u32 = "u_NumLights",
-    }
-
-    pipeline basic_pipe {
-        vbuf: gfx::VertexBuffer<Vertex> = (),
-        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
-        cb_lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
-        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
-        tex_map: gfx::TextureSampler<[f32; 4]> = "t_Map",
-        shadow_map0: gfx::TextureSampler<f32> = "t_Shadow0",
-        shadow_map1: gfx::TextureSampler<f32> = "t_Shadow1",
-        out_color: gfx::BlendTarget<ColorFormat> =
-            ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::REPLACE),
-        out_depth: gfx::DepthStencilTarget<DepthFormat> =
-            (gfx::preset::depth::LESS_EQUAL_WRITE, gfx::state::Stencil {
-                front: STENCIL_SIDE, back: STENCIL_SIDE,
-            }),
-    }
-
-    pipeline shadow_pipe {
-        vbuf: gfx::VertexBuffer<Vertex> = (),
-        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
-        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
-        target: gfx::DepthTarget<ShadowFormat> =
-            gfx::preset::depth::LESS_EQUAL_WRITE,
-    }
-
-    constant QuadParams {
-        rect: [f32; 4] = "u_Rect",
-        depth: f32 = "u_Depth",
-    }
-
-    pipeline quad_pipe {
-        params: gfx::ConstantBuffer<QuadParams> = "b_Params",
-        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
-        resource: gfx::RawShaderResource = "t_Input",
-        sampler: gfx::Sampler = "t_Input",
-        target: gfx::RenderTarget<ColorFormat> = "Target0",
-        depth_target: gfx::DepthTarget<DepthFormat> =
-            gfx::preset::depth::LESS_EQUAL_TEST,
-    }
-
-    constant PbrParams {
-        base_color_factor: [f32; 4] = "u_BaseColorFactor",
-        camera: [f32; 3] = "u_Camera",
-        _padding0: f32 = "_padding0",
-        emissive_factor: [f32; 3] = "u_EmissiveFactor",
-        _padding1: f32 = "_padding1",
-        metallic_roughness: [f32; 2] = "u_MetallicRoughnessValues",
-        normal_scale: f32 = "u_NormalScale",
-        occlusion_strength: f32 = "u_OcclusionStrength",
-        pbr_flags: i32 = "u_PbrFlags",
-    }
-
-    constant DisplacementContribution {
-        position: f32 = "position",
-        normal: f32 = "normal",
-        tangent: f32 = "tangent",
-        weight: f32 = "weight",
-    }
-
-    pipeline pbr_pipe {
-        vbuf: gfx::VertexBuffer<Vertex> = (),
-
-        locals: gfx::ConstantBuffer<Locals> = "b_Locals",
-        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
-        params: gfx::ConstantBuffer<PbrParams> = "b_PbrParams",
-        lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
-        displacement_contributions: gfx::ConstantBuffer<DisplacementContribution> = "b_DisplacementContributions",
-        joint_transforms: gfx::ShaderResource<[f32; 4]> = "b_JointTransforms",
-
-        base_color_map: gfx::TextureSampler<[f32; 4]> = "u_BaseColorSampler",
-
-        normal_map: gfx::TextureSampler<[f32; 4]> = "u_NormalSampler",
-
-        emissive_map: gfx::TextureSampler<[f32; 4]> = "u_EmissiveSampler",
-
-        metallic_roughness_map: gfx::TextureSampler<[f32; 4]> = "u_MetallicRoughnessSampler",
-
-        occlusion_map: gfx::TextureSampler<[f32; 4]> = "u_OcclusionSampler",
-
-        color_target: gfx::RenderTarget<ColorFormat> = "Target0",
-        depth_target: gfx::DepthTarget<DepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
-    }
-}
-
-impl Default for DisplacementContribution {
-    fn default() -> Self {
-        Self { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 }
-    }
-}
-
-//TODO: private fields?
-#[derive(Clone, Debug)]
-pub(crate) struct GpuData {
-    pub slice: gfx::Slice<back::Resources>,
-    pub vertices: gfx::handle::Buffer<back::Resources, Vertex>,
-    pub constants: gfx::handle::Buffer<back::Resources, Locals>,
-    pub pending: Option<DynamicData>,
-    pub displacement_contributions: [DisplacementContribution; MAX_TARGETS],
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct DynamicData {
-    pub num_vertices: usize,
-    pub buffer: gfx::handle::Buffer<back::Resources, Vertex>,
-}
-
-/// Shadow type is used to specify shadow's rendering algorithm.
-pub enum ShadowType {
-    /// Force no shadows.
-    Off,
-    /// Basic (and fast) single-sample shadows.
-    Basic,
-    /// Percentage-closest filter (PCF).
-    Pcf,
-}
-
-bitflags! {
-    struct PbrFlags: i32 {
-        const BASE_COLOR_MAP         = 1 << 0;
-        const NORMAL_MAP             = 1 << 1;
-        const METALLIC_ROUGHNESS_MAP = 1 << 2;
-        const EMISSIVE_MAP           = 1 << 3;
-        const OCCLUSION_MAP          = 1 << 4;
-    }
-}
-
-struct DebugQuad {
-    resource: gfx::handle::RawShaderResourceView<back::Resources>,
-    pos: [i32; 2],
-    size: [i32; 2],
-}
-
-/// All pipeline state objects used by the `three` renderer.
-pub struct PipelineStates {
-    /// Corresponds to `Material::Basic`.
-    mesh_basic_fill: BasicPipelineState,
-
-    /// Corresponds to `Material::Line`.
-    line_basic: BasicPipelineState,
-
-    /// Corresponds to `Material::Wireframe`.
-    mesh_basic_wireframe: BasicPipelineState,
-
-    /// Corresponds to `Material::Gouraud`.
-    mesh_gouraud: BasicPipelineState,
-
-    /// Corresponds to `Material::Phong`.
-    mesh_phong: BasicPipelineState,
-
-    /// Corresponds to `Material::Sprite`.
-    sprite: BasicPipelineState,
-
-    /// Used internally for shadow casting.
-    shadow: gfx::PipelineState<back::Resources, shadow_pipe::Meta>,
-
-    /// Used internally for rendering sprites.
-    quad: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
-
-    /// Corresponds to `Material::Pbr`.
-    pbr: gfx::PipelineState<back::Resources, pbr_pipe::Meta>,
-
-    /// Used internally for rendering `Background::Skybox`.
-    skybox: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
-}
-
-impl PipelineStates {
-    /// Creates the set of pipeline states needed by the `three` renderer.
-    pub fn new(
-        src: &source::Set,
-        factory: &mut Factory,
-    ) -> Result<Self, PipelineCreationError> {
-        Self::init(src, &mut factory.backend)
-    }
-
-    /// Implementation of `PipelineStates::new`.
-    pub(crate) fn init(
-        src: &source::Set,
-        backend: &mut back::Factory,
-    ) -> Result<Self, PipelineCreationError> {
-        let basic = backend.create_shader_set(&src.basic.vs, &src.basic.ps)?;
-        let gouraud = backend.create_shader_set(&src.gouraud.vs, &src.gouraud.ps)?;
-        let phong = backend.create_shader_set(&src.phong.vs, &src.phong.ps)?;
-        let sprite = backend.create_shader_set(&src.sprite.vs, &src.sprite.ps)?;
-        let shadow = backend.create_shader_set(&src.shadow.vs, &src.shadow.ps)?;
-        let quad = backend.create_shader_set(&src.quad.vs, &src.quad.ps)?;
-        let pbr = backend.create_shader_set(&src.pbr.vs, &src.pbr.ps)?;
-        let skybox = backend.create_shader_set(&src.skybox.vs, &src.skybox.ps)?;
-
-        let rast_quad = gfx::state::Rasterizer::new_fill();
-        let rast_fill = gfx::state::Rasterizer::new_fill().with_cull_back();
-        let rast_wire = gfx::state::Rasterizer {
-            method: gfx::state::RasterMethod::Line(1),
-            ..rast_fill
-        };
-        let rast_shadow = gfx::state::Rasterizer {
-            offset: Some(gfx::state::Offset(2, 2)),
-            ..rast_fill
-        };
-
-        let pso_mesh_basic_fill = backend.create_pipeline_state(
-            &basic,
-            gfx::Primitive::TriangleList,
-            rast_fill,
-            basic_pipe::new(),
-        )?;
-        let pso_line_basic = backend.create_pipeline_state(
-            &basic,
-            gfx::Primitive::LineStrip,
-            rast_fill,
-            basic_pipe::new(),
-        )?;
-        let pso_mesh_basic_wireframe = backend.create_pipeline_state(
-            &basic,
-            gfx::Primitive::TriangleList,
-            rast_wire,
-            basic_pipe::new(),
-        )?;
-        let pso_mesh_gouraud = backend.create_pipeline_state(
-            &gouraud,
-            gfx::Primitive::TriangleList,
-            rast_fill,
-            basic_pipe::new(),
-        )?;
-        let pso_mesh_phong = backend.create_pipeline_state(
-            &phong,
-            gfx::Primitive::TriangleList,
-            rast_fill,
-            basic_pipe::new(),
-        )?;
-        let pso_sprite = backend.create_pipeline_state(
-            &sprite,
-            gfx::Primitive::TriangleStrip,
-            rast_fill,
-            basic_pipe::Init {
-                out_color: ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
-                ..basic_pipe::new()
-            },
-        )?;
-        let pso_shadow = backend.create_pipeline_state(
-            &shadow,
-            gfx::Primitive::TriangleList,
-            rast_shadow,
-            shadow_pipe::new(),
-        )?;
-        let pso_quad = backend.create_pipeline_state(
-            &quad,
-            gfx::Primitive::TriangleStrip,
-            rast_quad,
-            quad_pipe::new(),
-        )?;
-        let pso_skybox = backend.create_pipeline_state(
-            &skybox,
-            gfx::Primitive::TriangleStrip,
-            rast_quad,
-            quad_pipe::new(),
-        )?;
-        let pso_pbr = backend.create_pipeline_state(
-            &pbr,
-            gfx::Primitive::TriangleList,
-            rast_fill,
-            pbr_pipe::new(),
-        )?;
-
-        Ok(PipelineStates {
-            mesh_basic_fill: pso_mesh_basic_fill,
-            line_basic: pso_line_basic,
-            mesh_basic_wireframe: pso_mesh_basic_wireframe,
-            mesh_gouraud: pso_mesh_gouraud,
-            mesh_phong: pso_mesh_phong,
-            sprite: pso_sprite,
-            shadow: pso_shadow,
-            quad: pso_quad,
-            pbr: pso_pbr,
-            skybox: pso_skybox,
-        })
-    }
-}
-
-/// Handle for additional viewport to render some relevant debug information.
-/// See [`Renderer::debug_shadow_quad`](struct.Renderer.html#method.debug_shadow_quad).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct DebugQuadHandle(froggy::Pointer<DebugQuad>);
-
-/// Renders [`Scene`](struct.Scene.html) by [`Camera`](struct.Camera.html).
-///
-/// See [Window::render](struct.Window.html#method.render).
-pub struct OldRenderer {
-    device: back::Device,
-    encoder: gfx::Encoder<back::Resources, back::CommandBuffer>,
-    const_buf: gfx::handle::Buffer<back::Resources, Globals>,
-    quad_buf: gfx::handle::Buffer<back::Resources, QuadParams>,
-    light_buf: gfx::handle::Buffer<back::Resources, LightParam>,
-    pbr_buf: gfx::handle::Buffer<back::Resources, PbrParams>,
-    displacement_contributions_buf: gfx::handle::Buffer<back::Resources, DisplacementContribution>,
-    out_color: gfx::handle::RenderTargetView<back::Resources, ColorFormat>,
-    out_depth: gfx::handle::DepthStencilView<back::Resources, DepthFormat>,
-    default_joint_buffer_view: gfx::handle::ShaderResourceView<back::Resources, [f32; 4]>,
-    pso: PipelineStates,
-    map_default: Texture<[f32; 4]>,
-    shadow_default: Texture<f32>,
-    debug_quads: froggy::Storage<DebugQuad>,
-    size: (u32, u32),
-    font_cache: HashMap<PathBuf, Font>,
-    /// `ShadowType` of this `Renderer`.
-    pub shadow: ShadowType,
-}
-*/
-
-#[repr(C)]
-struct TriangleVertex {
-    position: [f32; 3],
-}
-
-#[repr(C)]
-struct UniformBlock {
-    color: [f32; 4],
-}
-
-const POSITION_FORMAT: gpu::buffer::Format = gpu::buffer::Format::Float { size: 3, bits: 32 };
-
-const TRIANGLE_DATA: &'static [TriangleVertex] = &[
-    TriangleVertex { position: [ -0.5, -0.5, 0.0 ] },
-    TriangleVertex { position: [ 0.5, -0.5, 0.0 ] },
-    TriangleVertex { position: [ 0.0, 0.5, 0.0 ] },
-];
-
-const YELLOW: &'static [UniformBlock] = &[
-    UniformBlock { color: [1.0, 1.0, 0.0, 1.0] },
-];
-
-const GREEN_PIXEL: &'static [[u8; 4]] = &[
-    [0, 255, 0, 255],
-];
-
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum Pipeline {
-    /// Basic program pipeline.
-    Basic,
+pub(crate) enum Pipeline {
+    /// Solid color program pipeline.
+    Solid,
 }
 
+#[allow(non_snake_case)]
+#[repr(C)]
+struct SolidGlobals {
+    pub u_World: [[f32; 4]; 4],
+    pub u_ViewProjection: [[f32; 4]; 4],
+}
+
+impl Default for SolidGlobals {
+    fn default() -> Self {
+        use ::cgmath::SquareMatrix;
+        Self {
+            u_World: ::cgmath::Matrix4::identity().into(),
+            u_ViewProjection: ::cgmath::Matrix4::identity().into(),
+        }
+    }
+}
+
+#[allow(non_snake_case)]
+#[repr(C)]
+struct SolidLocals {
+    pub u_Color: [f32; 4],
+}
+
+impl Default for SolidLocals {
+    fn default() -> Self {
+        Self {
+            u_Color: [0.0; 4],
+        }
+    }
+}
+
+#[allow(non_snake_case)]
 #[derive(Clone)]
-struct Basic {
+struct Solid {
     program: gpu::Program,
-    uniform_block_binding: usize,
-    sampler_binding: usize,
+    locals: (u32, gpu::Buffer),
+    globals: (u32, gpu::Buffer),
 }
 
 #[derive(Clone)]
-struct Programs {
-    basic: Basic,
+struct Pipelines {
+    solid: Solid,
 }
 
+/// Three renderer.
 pub struct Renderer {
     factory: Factory,
-    programs: Programs,
+    pipelines: Pipelines,
 }
-
-/*
-        let vertex_shader = {
-            let mut source = read_file_to_end("gpu/triangle.vert").unwrap();
-            source.push(0);
-            factory.program_object(
-                gpu::program::Kind::Vertex,
-                cstr(&source),
-            )
-        };
-        let fragment_shader = {
-            let mut source = read_file_to_end("gpu/triangle.frag").unwrap();
-            source.push(0);
-            factory.program_object(
-                gpu::program::Kind::Fragment,
-                cstr(&source),
-            )
-        };
-        let (program, block_binding, sampler_binding) = {
-            let prog = factory.program(
-                &vertex_shader,
-                &fragment_shader,
-            );
-            let bname = cstr(b"UniformBlock\0");
-            let bbinding = factory.query_uniform_block_index(&prog, bname);
-            let sname = cstr(b"u_Sampler\0");
-            let sbinding = factory.query_uniform_index(&prog, sname);
-            (prog, bbinding.unwrap() as usize, sbinding.unwrap() as usize)
-        };
-
-        let vertex_buffer = factory.buffer(gpu::buffer::Kind::Array, gpu::buffer::Usage::StaticDraw);
-        factory.initialize_buffer(&vertex_buffer, TRIANGLE_DATA);
-
-        let uniform_buffer = factory.buffer(gpu::buffer::Kind::Uniform, gpu::buffer::Usage::DynamicDraw);
-        factory.initialize_buffer(&uniform_buffer, YELLOW);
-        
-        let position_accessor = gpu::buffer::Accessor::new(vertex_buffer, POSITION_FORMAT, 0, 0);
-        let mut vertex_array_builder = gpu::VertexArray::builder();
-        vertex_array_builder.attributes.insert(0, position_accessor);
-        let vertex_array = factory.vertex_array(vertex_array_builder);
-
-        let texture = factory.texture2(Default::default());
-        factory.initialize_texture2(
-            &texture,
-            true,
-            0x1908, // gl::RGBA8,
-            1,
-            1,
-            0x1908, // gl::RGBA,
-            0x1401, // gl::UNSIGNED_BYTE,
-            GREEN_PIXEL,
-        );
-            
-        let sampler = gpu::Sampler::from_texture2(texture);
-*/
 
 impl Renderer {
     /// Constructor.
@@ -809,40 +336,43 @@ impl Renderer {
                 util::cstr(&source),
             )
         };
-        let (program, uniform_block_binding, sampler_binding) = {
-            let prog = factory.program(
-                &vertex_shader,
-                &fragment_shader,
+        let program = factory.program(&vertex_shader, &fragment_shader);
+        let locals = {
+            let name = util::cstr(b"b_Locals\0");
+            factory.set_uniform_block_binding(&program, name, 0);
+            let buf = factory.buffer(
+                gpu::buffer::Kind::Uniform,
+                gpu::buffer::Usage::DynamicDraw,
             );
-            //let bname = util::cstr(b"UniformBlock\0");
-            let bbinding = 0; // factory.query_uniform_block_index(&prog, bname);
-            //let sname = util::cstr(b"u_Sampler\0");
-            let sbinding = 0; // factory.query_uniform_index(&prog, sname);
-            (prog, bbinding, sbinding)
+            factory.initialize_buffer(
+                &buf,
+                &[SolidLocals::default()],
+            );
+            (0, buf)
         };
-        let programs = Programs {
-            basic: Basic {
+        let globals = {
+            let name = util::cstr(b"b_Globals\0");
+            let idx = factory.set_uniform_block_binding(&program, name, 1);
+            let buf = factory.buffer(
+                gpu::buffer::Kind::Uniform,
+                gpu::buffer::Usage::DynamicDraw,
+            );
+            factory.initialize_buffer(
+                &buf,
+                &[SolidGlobals::default()],
+            );
+            (1, buf)
+        };
+        let pipelines = Pipelines {
+            solid: Solid {
                 program,
-                uniform_block_binding,
-                sampler_binding,
+                locals,
+                globals,
             },
         };
         Self {
             factory,
-            programs,
-        }
-    }
-
-    fn make_invocation<'a>(
-        program: &'a gpu::Program,
-        _material: &Material,
-    ) -> gpu::program::Invocation<'a> {
-        let uniforms = [None, None, None, None];
-        let samplers = [None, None, None, None];
-        gpu::program::Invocation {
-            program,
-            uniforms,
-            samplers,
+            pipelines,
         }
     }
 
@@ -850,24 +380,101 @@ impl Renderer {
     pub fn render(
         &mut self,
         scene: &Scene,
-        _camera: &Camera,
+        camera: &Camera,
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
-        let scene_id = hub.nodes[&scene.object.node].scene_id;
 
         hub.process_messages();
-        hub.update_graph();
+        hub.update_graph(scene);
+        let mx_view = {
+            use ::cgmath::Transform;
+            let node = &hub[camera];
+            let inv_transform = node.world_transform
+                .inverse_transform()
+                .unwrap();
+            ::cgmath::Matrix4::from(inv_transform)
+        };
+        let mx_projection = ::cgmath::Matrix4::from(camera.matrix(1.0));
+        let mx_view_projection: [[f32; 4]; 4] = {
+            (mx_projection * mx_view).into()
+        };
+
+        self.factory.clear_color_buffer(0.0, 0.0, 0.0, 0.0);
+        self.factory.clear_depth_buffer();
 
         for node in hub.nodes.iter_mut() {
-            if !node.visible || node.scene_id != scene_id {
+            if !node.visible {
                 continue;
             }
             if let SubNode::Visual(ref data) = node.sub_node {
-                let material = &data.material;
-                let program = match data.pipeline {
-                    Pipeline::Basic => &self.programs.basic.program,
+                let mx_world: [[f32; 4]; 4] =
+                    ::cgmath::Matrix4::from(node.world_transform.clone())
+                    .into();
+                let invocation = {
+                    let pipe = &self.pipelines.solid;
+                    let locals = SolidLocals {
+                        u_Color: [1.0, 1.0, 0.0, 0.0],
+                    };
+                    self.factory.overwrite_buffer(
+                        pipe.locals.1.slice(
+                            0,
+                            mem::size_of::<SolidLocals>(),
+                        ),
+                        &[locals],
+                    );
+                    let globals = SolidGlobals {
+                        u_World: mx_world,
+                        u_ViewProjection: mx_view_projection.clone(),
+                    };
+                    self.factory.overwrite_buffer(
+                        pipe.globals.1.slice(
+                            0,
+                            mem::size_of::<SolidGlobals>(),
+                        ),
+                        &[globals],
+                    );
+                    let mut invocation = gpu::program::Invocation {
+                        program: &pipe.program,
+                        uniforms: gpu::ArrayVec::new(),
+                        samplers: gpu::ArrayVec::new(),
+                    };
+                    invocation.uniforms.push((pipe.locals.0, &pipe.locals.1));
+                    invocation.uniforms.push((pipe.globals.0, &pipe.globals.1));
+                    invocation
                 };
-                let invocation = Self::make_invocation(program, material);
+                /*
+                let invocation = match data.material {
+                    Material::Basic(ref params) => {
+                        match data.pipeline {
+                            Pipeline::Solid => {
+                                let pipeline = &self.pipelines.solid;
+                                let c = color::to_linear_rgb(params.color);
+                                let locals = SolidLocals {
+                                    u_Color: [c[0], c[1], c[2], 0.0],
+                                };
+                                self.factory.overwrite_buffer(
+                                    pipeline.buffer.slice(0, mem::size_of::<SolidLocals>()),
+                                    &[locals],
+                                );
+                                let mut invocation = gpu::program::Invocation {
+                                    program: &pipeline.program,
+                                    uniforms: gpu::ArrayVec::new(),
+                                    samplers: gpu::ArrayVec::new(),
+                                };
+                                invocation.uniforms
+                                    .push(
+                                        (
+                                            pipeline.b_Locals,
+                                            &pipeline.buffer,
+                                        )
+                                    );
+                                invocation
+                            }
+                        }
+                    },
+                    _ => unimplemented!(),
+                };
+                */
                 let draw_call = gpu::DrawCall {
                     primitive: gpu::Primitive::Triangles,
                     mode: data.mode,
@@ -883,7 +490,7 @@ impl Renderer {
         }
     }
 
-    pub(crate) fn resize(
+    pub(crate) fn _resize(
         &mut self,
         _window: &glutin::GlWindow,
     ) {
@@ -1542,4 +1149,1344 @@ impl OldRenderer {
         }))
     }
 }
+*/
+
+/*
+/// The format of the back buffer color requested from the windowing system.
+pub type ColorFormat = gfx::format::Rgba8;
+/// The format of the depth stencil buffer requested from the windowing system.
+pub type DepthFormat = gfx::format::DepthStencil;
+/// The format of the shadow buffer.
+pub type ShadowFormat = gfx::format::Depth32F;
+/// The concrete type of a basic pipeline.
+pub type BasicPipelineState = gfx::PipelineState<back::Resources, basic_pipe::Meta>;
+
+const MAX_LIGHTS: usize = 4;
+
+const STENCIL_SIDE: gfx::state::StencilSide = gfx::state::StencilSide {
+    fun: gfx::state::Comparison::Always,
+    mask_read: 0,
+    mask_write: 0,
+    op_fail: gfx::state::StencilOp::Keep,
+    op_depth_fail: gfx::state::StencilOp::Keep,
+    op_pass: gfx::state::StencilOp::Keep,
+};
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+quick_error! {
+    #[doc = "Error encountered when building pipelines."]
+    #[derive(Debug)]
+    pub enum PipelineCreationError {
+        #[doc = "GLSL compiler/linker error."]
+        Compilation(err: gfx::shade::ProgramError) {
+            from()
+            description("GLSL program compilation error")
+            display("GLSL program compilation error")
+            cause(err)
+        }
+
+        #[doc = "Pipeline state error."]
+        State(err: gfx::PipelineStateError<String>) {
+            from()
+            description("Pipeline state error")
+            display("Pipeline state error")
+            cause(err)
+        }
+
+        #[doc = "Standard I/O error."]
+        Io(err: io::Error) {
+            from()
+            description("I/O error")
+            display("I/O error")
+            cause(err)
+        }
+    }
+}
+
+/// Default values for type `Vertex`.
+pub const DEFAULT_VERTEX: Vertex = Vertex {
+    pos: [0.0, 0.0, 0.0, 1.0],
+    uv: [0.0, 0.0],
+    normal: [I8Norm(0), I8Norm(127), I8Norm(0), I8Norm(0)],
+    tangent: [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(0)],
+    joint_indices: [0.0, 0.0, 0.0, 0.0],
+    joint_weights: [1.0, 1.0, 1.0, 1.0],
+
+    displacement0: [0.0, 0.0, 0.0, 0.0],
+    displacement1: [0.0, 0.0, 0.0, 0.0],
+    displacement2: [0.0, 0.0, 0.0, 0.0],
+    displacement3: [0.0, 0.0, 0.0, 0.0],
+    displacement4: [0.0, 0.0, 0.0, 0.0],
+    displacement5: [0.0, 0.0, 0.0, 0.0],
+    displacement6: [0.0, 0.0, 0.0, 0.0],
+    displacement7: [0.0, 0.0, 0.0, 0.0],
+};
+
+impl Default for Vertex {
+    fn default() -> Self {
+        DEFAULT_VERTEX
+    }
+}
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+gfx_defines! {
+    vertex Vertex {
+        pos: [f32; 4] = "a_Position",
+        uv: [f32; 2] = "a_TexCoord",
+        normal: [gfx::format::I8Norm; 4] = "a_Normal",
+        tangent: [gfx::format::I8Norm; 4] = "a_Tangent",
+        joint_indices: [f32; 4] = "a_JointIndices",
+        joint_weights: [f32; 4] = "a_JointWeights",
+
+        displacement0: [f32; 4] = "a_Displacement0",
+        displacement1: [f32; 4] = "a_Displacement1",
+        displacement2: [f32; 4] = "a_Displacement2",
+        displacement3: [f32; 4] = "a_Displacement3",
+        displacement4: [f32; 4] = "a_Displacement4",
+        displacement5: [f32; 4] = "a_Displacement5",
+        displacement6: [f32; 4] = "a_Displacement6",
+        displacement7: [f32; 4] = "a_Displacement7",
+    }
+
+    constant Locals {
+        color: [f32; 4] = "u_Color",
+        mat_params: [f32; 4] = "u_MatParams",
+        uv_range: [f32; 4] = "u_UvRange",
+        mx_world: [[f32; 4]; 4] = "u_World",
+    }
+
+    constant LightParam {
+        projection: [[f32; 4]; 4] = "projection",
+        pos: [f32; 4] = "pos",
+        dir: [f32; 4] = "dir",
+        focus: [f32; 4] = "focus",
+        color: [f32; 4] = "color",
+        color_back: [f32; 4] = "color_back",
+        intensity: [f32; 4] = "intensity",
+        shadow_params: [i32; 4] = "shadow_params",
+    }
+
+    constant Globals {
+        mx_vp: [[f32; 4]; 4] = "u_ViewProj",
+        mx_inv_proj: [[f32; 4]; 4] = "u_InverseProj",
+        mx_view: [[f32; 4]; 4] = "u_View",
+        num_lights: u32 = "u_NumLights",
+    }
+
+    pipeline basic_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        cb_lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
+        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        tex_map: gfx::TextureSampler<[f32; 4]> = "t_Map",
+        shadow_map0: gfx::TextureSampler<f32> = "t_Shadow0",
+        shadow_map1: gfx::TextureSampler<f32> = "t_Shadow1",
+        out_color: gfx::BlendTarget<ColorFormat> =
+            ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::REPLACE),
+        out_depth: gfx::DepthStencilTarget<DepthFormat> =
+            (gfx::preset::depth::LESS_EQUAL_WRITE, gfx::state::Stencil {
+                front: STENCIL_SIDE, back: STENCIL_SIDE,
+            }),
+    }
+
+    pipeline shadow_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        target: gfx::DepthTarget<ShadowFormat> =
+            gfx::preset::depth::LESS_EQUAL_WRITE,
+    }
+
+    constant QuadParams {
+        rect: [f32; 4] = "u_Rect",
+        depth: f32 = "u_Depth",
+    }
+
+    pipeline quad_pipe {
+        params: gfx::ConstantBuffer<QuadParams> = "b_Params",
+        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        resource: gfx::RawShaderResource = "t_Input",
+        sampler: gfx::Sampler = "t_Input",
+        target: gfx::RenderTarget<ColorFormat> = "Target0",
+        depth_target: gfx::DepthTarget<DepthFormat> =
+            gfx::preset::depth::LESS_EQUAL_TEST,
+    }
+
+    constant PbrParams {
+        base_color_factor: [f32; 4] = "u_BaseColorFactor",
+        camera: [f32; 3] = "u_Camera",
+        _padding0: f32 = "_padding0",
+        emissive_factor: [f32; 3] = "u_EmissiveFactor",
+        _padding1: f32 = "_padding1",
+        metallic_roughness: [f32; 2] = "u_MetallicRoughnessValues",
+        normal_scale: f32 = "u_NormalScale",
+        occlusion_strength: f32 = "u_OcclusionStrength",
+        pbr_flags: i32 = "u_PbrFlags",
+    }
+
+    constant DisplacementContribution {
+        position: f32 = "position",
+        normal: f32 = "normal",
+        tangent: f32 = "tangent",
+        weight: f32 = "weight",
+    }
+
+    pipeline pbr_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+
+        locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        params: gfx::ConstantBuffer<PbrParams> = "b_PbrParams",
+        lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
+        displacement_contributions: gfx::ConstantBuffer<DisplacementContribution> = "b_DisplacementContributions",
+        joint_transforms: gfx::ShaderResource<[f32; 4]> = "b_JointTransforms",
+
+        base_color_map: gfx::TextureSampler<[f32; 4]> = "u_BaseColorSampler",
+
+        normal_map: gfx::TextureSampler<[f32; 4]> = "u_NormalSampler",
+
+        emissive_map: gfx::TextureSampler<[f32; 4]> = "u_EmissiveSampler",
+
+        metallic_roughness_map: gfx::TextureSampler<[f32; 4]> = "u_MetallicRoughnessSampler",
+
+        occlusion_map: gfx::TextureSampler<[f32; 4]> = "u_OcclusionSampler",
+
+        color_target: gfx::RenderTarget<ColorFormat> = "Target0",
+        depth_target: gfx::DepthTarget<DepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
+    }
+}
+
+impl Default for DisplacementContribution {
+    fn default() -> Self {
+        Self { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 }
+    }
+}
+
+//TODO: private fields?
+#[derive(Clone, Debug)]
+pub(crate) struct GpuData {
+    pub slice: gfx::Slice<back::Resources>,
+    pub vertices: gfx::handle::Buffer<back::Resources, Vertex>,
+    pub constants: gfx::handle::Buffer<back::Resources, Locals>,
+    pub pending: Option<DynamicData>,
+    pub displacement_contributions: [DisplacementContribution; MAX_TARGETS],
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DynamicData {
+    pub num_vertices: usize,
+    pub buffer: gfx::handle::Buffer<back::Resources, Vertex>,
+}
+
+/// Shadow type is used to specify shadow's rendering algorithm.
+pub enum ShadowType {
+    /// Force no shadows.
+    Off,
+    /// Basic (and fast) single-sample shadows.
+    Basic,
+    /// Percentage-closest filter (PCF).
+    Pcf,
+}
+
+bitflags! {
+    struct PbrFlags: i32 {
+        const BASE_COLOR_MAP         = 1 << 0;
+        const NORMAL_MAP             = 1 << 1;
+        const METALLIC_ROUGHNESS_MAP = 1 << 2;
+        const EMISSIVE_MAP           = 1 << 3;
+        const OCCLUSION_MAP          = 1 << 4;
+    }
+}
+
+struct DebugQuad {
+    resource: gfx::handle::RawShaderResourceView<back::Resources>,
+    pos: [i32; 2],
+    size: [i32; 2],
+}
+
+/// All pipeline state objects used by the `three` renderer.
+pub struct PipelineStates {
+    /// Corresponds to `Material::Basic`.
+    mesh_basic_fill: BasicPipelineState,
+
+    /// Corresponds to `Material::Line`.
+    line_basic: BasicPipelineState,
+
+    /// Corresponds to `Material::Wireframe`.
+    mesh_basic_wireframe: BasicPipelineState,
+
+    /// Corresponds to `Material::Gouraud`.
+    mesh_gouraud: BasicPipelineState,
+
+    /// Corresponds to `Material::Phong`.
+    mesh_phong: BasicPipelineState,
+
+    /// Corresponds to `Material::Sprite`.
+    sprite: BasicPipelineState,
+
+    /// Used internally for shadow casting.
+    shadow: gfx::PipelineState<back::Resources, shadow_pipe::Meta>,
+
+    /// Used internally for rendering sprites.
+    quad: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
+
+    /// Corresponds to `Material::Pbr`.
+    pbr: gfx::PipelineState<back::Resources, pbr_pipe::Meta>,
+
+    /// Used internally for rendering `Background::Skybox`.
+    skybox: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
+}
+
+impl PipelineStates {
+    /// Creates the set of pipeline states needed by the `three` renderer.
+    pub fn new(
+        src: &source::Set,
+        factory: &mut Factory,
+    ) -> Result<Self, PipelineCreationError> {
+        Self::init(src, &mut factory.backend)
+    }
+
+    /// Implementation of `PipelineStates::new`.
+    pub(crate) fn init(
+        src: &source::Set,
+        backend: &mut back::Factory,
+    ) -> Result<Self, PipelineCreationError> {
+        let basic = backend.create_shader_set(&src.basic.vs, &src.basic.ps)?;
+        let gouraud = backend.create_shader_set(&src.gouraud.vs, &src.gouraud.ps)?;
+        let phong = backend.create_shader_set(&src.phong.vs, &src.phong.ps)?;
+        let sprite = backend.create_shader_set(&src.sprite.vs, &src.sprite.ps)?;
+        let shadow = backend.create_shader_set(&src.shadow.vs, &src.shadow.ps)?;
+        let quad = backend.create_shader_set(&src.quad.vs, &src.quad.ps)?;
+        let pbr = backend.create_shader_set(&src.pbr.vs, &src.pbr.ps)?;
+        let skybox = backend.create_shader_set(&src.skybox.vs, &src.skybox.ps)?;
+
+        let rast_quad = gfx::state::Rasterizer::new_fill();
+        let rast_fill = gfx::state::Rasterizer::new_fill().with_cull_back();
+        let rast_wire = gfx::state::Rasterizer {
+            method: gfx::state::RasterMethod::Line(1),
+            ..rast_fill
+        };
+        let rast_shadow = gfx::state::Rasterizer {
+            offset: Some(gfx::state::Offset(2, 2)),
+            ..rast_fill
+        };
+
+        let pso_mesh_basic_fill = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_line_basic = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::LineStrip,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_basic_wireframe = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::TriangleList,
+            rast_wire,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_gouraud = backend.create_pipeline_state(
+            &gouraud,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_phong = backend.create_pipeline_state(
+            &phong,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_sprite = backend.create_pipeline_state(
+            &sprite,
+            gfx::Primitive::TriangleStrip,
+            rast_fill,
+            basic_pipe::Init {
+                out_color: ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
+                ..basic_pipe::new()
+            },
+        )?;
+        let pso_shadow = backend.create_pipeline_state(
+            &shadow,
+            gfx::Primitive::TriangleList,
+            rast_shadow,
+            shadow_pipe::new(),
+        )?;
+        let pso_quad = backend.create_pipeline_state(
+            &quad,
+            gfx::Primitive::TriangleStrip,
+            rast_quad,
+            quad_pipe::new(),
+        )?;
+        let pso_skybox = backend.create_pipeline_state(
+            &skybox,
+            gfx::Primitive::TriangleStrip,
+            rast_quad,
+            quad_pipe::new(),
+        )?;
+        let pso_pbr = backend.create_pipeline_state(
+            &pbr,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            pbr_pipe::new(),
+        )?;
+
+        Ok(PipelineStates {
+            mesh_basic_fill: pso_mesh_basic_fill,
+            line_basic: pso_line_basic,
+            mesh_basic_wireframe: pso_mesh_basic_wireframe,
+            mesh_gouraud: pso_mesh_gouraud,
+            mesh_phong: pso_mesh_phong,
+            sprite: pso_sprite,
+            shadow: pso_shadow,
+            quad: pso_quad,
+            pbr: pso_pbr,
+            skybox: pso_skybox,
+        })
+    }
+}
+
+/// Handle for additional viewport to render some relevant debug information.
+/// See [`Renderer::debug_shadow_quad`](struct.Renderer.html#method.debug_shadow_quad).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DebugQuadHandle(froggy::Pointer<DebugQuad>);
+
+/// Renders [`Scene`](struct.Scene.html) by [`Camera`](struct.Camera.html).
+///
+/// See [Window::render](struct.Window.html#method.render).
+pub struct OldRenderer {
+    device: back::Device,
+    encoder: gfx::Encoder<back::Resources, back::CommandBuffer>,
+    const_buf: gfx::handle::Buffer<back::Resources, Globals>,
+    quad_buf: gfx::handle::Buffer<back::Resources, QuadParams>,
+    light_buf: gfx::handle::Buffer<back::Resources, LightParam>,
+    pbr_buf: gfx::handle::Buffer<back::Resources, PbrParams>,
+    displacement_contributions_buf: gfx::handle::Buffer<back::Resources, DisplacementContribution>,
+    out_color: gfx::handle::RenderTargetView<back::Resources, ColorFormat>,
+    out_depth: gfx::handle::DepthStencilView<back::Resources, DepthFormat>,
+    default_joint_buffer_view: gfx::handle::ShaderResourceView<back::Resources, [f32; 4]>,
+    pso: PipelineStates,
+    map_default: Texture<[f32; 4]>,
+    shadow_default: Texture<f32>,
+    debug_quads: froggy::Storage<DebugQuad>,
+    size: (u32, u32),
+    font_cache: HashMap<PathBuf, Font>,
+    /// `ShadowType` of this `Renderer`.
+    pub shadow: ShadowType,
+}
+*/
+/*
+/// The format of the back buffer color requested from the windowing system.
+pub type ColorFormat = gfx::format::Rgba8;
+/// The format of the depth stencil buffer requested from the windowing system.
+pub type DepthFormat = gfx::format::DepthStencil;
+/// The format of the shadow buffer.
+pub type ShadowFormat = gfx::format::Depth32F;
+/// The concrete type of a basic pipeline.
+pub type BasicPipelineState = gfx::PipelineState<back::Resources, basic_pipe::Meta>;
+
+const MAX_LIGHTS: usize = 4;
+
+const STENCIL_SIDE: gfx::state::StencilSide = gfx::state::StencilSide {
+    fun: gfx::state::Comparison::Always,
+    mask_read: 0,
+    mask_write: 0,
+    op_fail: gfx::state::StencilOp::Keep,
+    op_depth_fail: gfx::state::StencilOp::Keep,
+    op_pass: gfx::state::StencilOp::Keep,
+};
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+quick_error! {
+    #[doc = "Error encountered when building pipelines."]
+    #[derive(Debug)]
+    pub enum PipelineCreationError {
+        #[doc = "GLSL compiler/linker error."]
+        Compilation(err: gfx::shade::ProgramError) {
+            from()
+            description("GLSL program compilation error")
+            display("GLSL program compilation error")
+            cause(err)
+        }
+
+        #[doc = "Pipeline state error."]
+        State(err: gfx::PipelineStateError<String>) {
+            from()
+            description("Pipeline state error")
+            display("Pipeline state error")
+            cause(err)
+        }
+
+        #[doc = "Standard I/O error."]
+        Io(err: io::Error) {
+            from()
+            description("I/O error")
+            display("I/O error")
+            cause(err)
+        }
+    }
+}
+
+/// Default values for type `Vertex`.
+pub const DEFAULT_VERTEX: Vertex = Vertex {
+    pos: [0.0, 0.0, 0.0, 1.0],
+    uv: [0.0, 0.0],
+    normal: [I8Norm(0), I8Norm(127), I8Norm(0), I8Norm(0)],
+    tangent: [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(0)],
+    joint_indices: [0.0, 0.0, 0.0, 0.0],
+    joint_weights: [1.0, 1.0, 1.0, 1.0],
+
+    displacement0: [0.0, 0.0, 0.0, 0.0],
+    displacement1: [0.0, 0.0, 0.0, 0.0],
+    displacement2: [0.0, 0.0, 0.0, 0.0],
+    displacement3: [0.0, 0.0, 0.0, 0.0],
+    displacement4: [0.0, 0.0, 0.0, 0.0],
+    displacement5: [0.0, 0.0, 0.0, 0.0],
+    displacement6: [0.0, 0.0, 0.0, 0.0],
+    displacement7: [0.0, 0.0, 0.0, 0.0],
+};
+
+impl Default for Vertex {
+    fn default() -> Self {
+        DEFAULT_VERTEX
+    }
+}
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+gfx_defines! {
+    vertex Vertex {
+        pos: [f32; 4] = "a_Position",
+        uv: [f32; 2] = "a_TexCoord",
+        normal: [gfx::format::I8Norm; 4] = "a_Normal",
+        tangent: [gfx::format::I8Norm; 4] = "a_Tangent",
+        joint_indices: [f32; 4] = "a_JointIndices",
+        joint_weights: [f32; 4] = "a_JointWeights",
+
+        displacement0: [f32; 4] = "a_Displacement0",
+        displacement1: [f32; 4] = "a_Displacement1",
+        displacement2: [f32; 4] = "a_Displacement2",
+        displacement3: [f32; 4] = "a_Displacement3",
+        displacement4: [f32; 4] = "a_Displacement4",
+        displacement5: [f32; 4] = "a_Displacement5",
+        displacement6: [f32; 4] = "a_Displacement6",
+        displacement7: [f32; 4] = "a_Displacement7",
+    }
+
+    constant Locals {
+        color: [f32; 4] = "u_Color",
+        mat_params: [f32; 4] = "u_MatParams",
+        uv_range: [f32; 4] = "u_UvRange",
+        mx_world: [[f32; 4]; 4] = "u_World",
+    }
+
+    constant LightParam {
+        projection: [[f32; 4]; 4] = "projection",
+        pos: [f32; 4] = "pos",
+        dir: [f32; 4] = "dir",
+        focus: [f32; 4] = "focus",
+        color: [f32; 4] = "color",
+        color_back: [f32; 4] = "color_back",
+        intensity: [f32; 4] = "intensity",
+        shadow_params: [i32; 4] = "shadow_params",
+    }
+
+    constant Globals {
+        mx_vp: [[f32; 4]; 4] = "u_ViewProj",
+        mx_inv_proj: [[f32; 4]; 4] = "u_InverseProj",
+        mx_view: [[f32; 4]; 4] = "u_View",
+        num_lights: u32 = "u_NumLights",
+    }
+
+    pipeline basic_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        cb_lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
+        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        tex_map: gfx::TextureSampler<[f32; 4]> = "t_Map",
+        shadow_map0: gfx::TextureSampler<f32> = "t_Shadow0",
+        shadow_map1: gfx::TextureSampler<f32> = "t_Shadow1",
+        out_color: gfx::BlendTarget<ColorFormat> =
+            ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::REPLACE),
+        out_depth: gfx::DepthStencilTarget<DepthFormat> =
+            (gfx::preset::depth::LESS_EQUAL_WRITE, gfx::state::Stencil {
+                front: STENCIL_SIDE, back: STENCIL_SIDE,
+            }),
+    }
+
+    pipeline shadow_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        target: gfx::DepthTarget<ShadowFormat> =
+            gfx::preset::depth::LESS_EQUAL_WRITE,
+    }
+
+    constant QuadParams {
+        rect: [f32; 4] = "u_Rect",
+        depth: f32 = "u_Depth",
+    }
+
+    pipeline quad_pipe {
+        params: gfx::ConstantBuffer<QuadParams> = "b_Params",
+        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        resource: gfx::RawShaderResource = "t_Input",
+        sampler: gfx::Sampler = "t_Input",
+        target: gfx::RenderTarget<ColorFormat> = "Target0",
+        depth_target: gfx::DepthTarget<DepthFormat> =
+            gfx::preset::depth::LESS_EQUAL_TEST,
+    }
+
+    constant PbrParams {
+        base_color_factor: [f32; 4] = "u_BaseColorFactor",
+        camera: [f32; 3] = "u_Camera",
+        _padding0: f32 = "_padding0",
+        emissive_factor: [f32; 3] = "u_EmissiveFactor",
+        _padding1: f32 = "_padding1",
+        metallic_roughness: [f32; 2] = "u_MetallicRoughnessValues",
+        normal_scale: f32 = "u_NormalScale",
+        occlusion_strength: f32 = "u_OcclusionStrength",
+        pbr_flags: i32 = "u_PbrFlags",
+    }
+
+    constant DisplacementContribution {
+        position: f32 = "position",
+        normal: f32 = "normal",
+        tangent: f32 = "tangent",
+        weight: f32 = "weight",
+    }
+
+    pipeline pbr_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+
+        locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        params: gfx::ConstantBuffer<PbrParams> = "b_PbrParams",
+        lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
+        displacement_contributions: gfx::ConstantBuffer<DisplacementContribution> = "b_DisplacementContributions",
+        joint_transforms: gfx::ShaderResource<[f32; 4]> = "b_JointTransforms",
+
+        base_color_map: gfx::TextureSampler<[f32; 4]> = "u_BaseColorSampler",
+
+        normal_map: gfx::TextureSampler<[f32; 4]> = "u_NormalSampler",
+
+        emissive_map: gfx::TextureSampler<[f32; 4]> = "u_EmissiveSampler",
+
+        metallic_roughness_map: gfx::TextureSampler<[f32; 4]> = "u_MetallicRoughnessSampler",
+
+        occlusion_map: gfx::TextureSampler<[f32; 4]> = "u_OcclusionSampler",
+
+        color_target: gfx::RenderTarget<ColorFormat> = "Target0",
+        depth_target: gfx::DepthTarget<DepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
+    }
+}
+
+impl Default for DisplacementContribution {
+    fn default() -> Self {
+        Self { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 }
+    }
+}
+
+//TODO: private fields?
+#[derive(Clone, Debug)]
+pub(crate) struct GpuData {
+    pub slice: gfx::Slice<back::Resources>,
+    pub vertices: gfx::handle::Buffer<back::Resources, Vertex>,
+    pub constants: gfx::handle::Buffer<back::Resources, Locals>,
+    pub pending: Option<DynamicData>,
+    pub displacement_contributions: [DisplacementContribution; MAX_TARGETS],
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DynamicData {
+    pub num_vertices: usize,
+    pub buffer: gfx::handle::Buffer<back::Resources, Vertex>,
+}
+
+/// Shadow type is used to specify shadow's rendering algorithm.
+pub enum ShadowType {
+    /// Force no shadows.
+    Off,
+    /// Basic (and fast) single-sample shadows.
+    Basic,
+    /// Percentage-closest filter (PCF).
+    Pcf,
+}
+
+bitflags! {
+    struct PbrFlags: i32 {
+        const BASE_COLOR_MAP         = 1 << 0;
+        const NORMAL_MAP             = 1 << 1;
+        const METALLIC_ROUGHNESS_MAP = 1 << 2;
+        const EMISSIVE_MAP           = 1 << 3;
+        const OCCLUSION_MAP          = 1 << 4;
+    }
+}
+
+struct DebugQuad {
+    resource: gfx::handle::RawShaderResourceView<back::Resources>,
+    pos: [i32; 2],
+    size: [i32; 2],
+}
+
+/// All pipeline state objects used by the `three` renderer.
+pub struct PipelineStates {
+    /// Corresponds to `Material::Basic`.
+    mesh_basic_fill: BasicPipelineState,
+
+    /// Corresponds to `Material::Line`.
+    line_basic: BasicPipelineState,
+
+    /// Corresponds to `Material::Wireframe`.
+    mesh_basic_wireframe: BasicPipelineState,
+
+    /// Corresponds to `Material::Gouraud`.
+    mesh_gouraud: BasicPipelineState,
+
+    /// Corresponds to `Material::Phong`.
+    mesh_phong: BasicPipelineState,
+
+    /// Corresponds to `Material::Sprite`.
+    sprite: BasicPipelineState,
+
+    /// Used internally for shadow casting.
+    shadow: gfx::PipelineState<back::Resources, shadow_pipe::Meta>,
+
+    /// Used internally for rendering sprites.
+    quad: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
+
+    /// Corresponds to `Material::Pbr`.
+    pbr: gfx::PipelineState<back::Resources, pbr_pipe::Meta>,
+
+    /// Used internally for rendering `Background::Skybox`.
+    skybox: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
+}
+
+impl PipelineStates {
+    /// Creates the set of pipeline states needed by the `three` renderer.
+    pub fn new(
+        src: &source::Set,
+        factory: &mut Factory,
+    ) -> Result<Self, PipelineCreationError> {
+        Self::init(src, &mut factory.backend)
+    }
+
+    /// Implementation of `PipelineStates::new`.
+    pub(crate) fn init(
+        src: &source::Set,
+        backend: &mut back::Factory,
+    ) -> Result<Self, PipelineCreationError> {
+        let basic = backend.create_shader_set(&src.basic.vs, &src.basic.ps)?;
+        let gouraud = backend.create_shader_set(&src.gouraud.vs, &src.gouraud.ps)?;
+        let phong = backend.create_shader_set(&src.phong.vs, &src.phong.ps)?;
+        let sprite = backend.create_shader_set(&src.sprite.vs, &src.sprite.ps)?;
+        let shadow = backend.create_shader_set(&src.shadow.vs, &src.shadow.ps)?;
+        let quad = backend.create_shader_set(&src.quad.vs, &src.quad.ps)?;
+        let pbr = backend.create_shader_set(&src.pbr.vs, &src.pbr.ps)?;
+        let skybox = backend.create_shader_set(&src.skybox.vs, &src.skybox.ps)?;
+
+        let rast_quad = gfx::state::Rasterizer::new_fill();
+        let rast_fill = gfx::state::Rasterizer::new_fill().with_cull_back();
+        let rast_wire = gfx::state::Rasterizer {
+            method: gfx::state::RasterMethod::Line(1),
+            ..rast_fill
+        };
+        let rast_shadow = gfx::state::Rasterizer {
+            offset: Some(gfx::state::Offset(2, 2)),
+            ..rast_fill
+        };
+
+        let pso_mesh_basic_fill = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_line_basic = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::LineStrip,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_basic_wireframe = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::TriangleList,
+            rast_wire,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_gouraud = backend.create_pipeline_state(
+            &gouraud,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_phong = backend.create_pipeline_state(
+            &phong,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_sprite = backend.create_pipeline_state(
+            &sprite,
+            gfx::Primitive::TriangleStrip,
+            rast_fill,
+            basic_pipe::Init {
+                out_color: ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
+                ..basic_pipe::new()
+            },
+        )?;
+        let pso_shadow = backend.create_pipeline_state(
+            &shadow,
+            gfx::Primitive::TriangleList,
+            rast_shadow,
+            shadow_pipe::new(),
+        )?;
+        let pso_quad = backend.create_pipeline_state(
+            &quad,
+            gfx::Primitive::TriangleStrip,
+            rast_quad,
+            quad_pipe::new(),
+        )?;
+        let pso_skybox = backend.create_pipeline_state(
+            &skybox,
+            gfx::Primitive::TriangleStrip,
+            rast_quad,
+            quad_pipe::new(),
+        )?;
+        let pso_pbr = backend.create_pipeline_state(
+            &pbr,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            pbr_pipe::new(),
+        )?;
+
+        Ok(PipelineStates {
+            mesh_basic_fill: pso_mesh_basic_fill,
+            line_basic: pso_line_basic,
+            mesh_basic_wireframe: pso_mesh_basic_wireframe,
+            mesh_gouraud: pso_mesh_gouraud,
+            mesh_phong: pso_mesh_phong,
+            sprite: pso_sprite,
+            shadow: pso_shadow,
+            quad: pso_quad,
+            pbr: pso_pbr,
+            skybox: pso_skybox,
+        })
+    }
+}
+
+/// Handle for additional viewport to render some relevant debug information.
+/// See [`Renderer::debug_shadow_quad`](struct.Renderer.html#method.debug_shadow_quad).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DebugQuadHandle(froggy::Pointer<DebugQuad>);
+
+/// Renders [`Scene`](struct.Scene.html) by [`Camera`](struct.Camera.html).
+///
+/// See [Window::render](struct.Window.html#method.render).
+pub struct OldRenderer {
+    device: back::Device,
+    encoder: gfx::Encoder<back::Resources, back::CommandBuffer>,
+    const_buf: gfx::handle::Buffer<back::Resources, Globals>,
+    quad_buf: gfx::handle::Buffer<back::Resources, QuadParams>,
+    light_buf: gfx::handle::Buffer<back::Resources, LightParam>,
+    pbr_buf: gfx::handle::Buffer<back::Resources, PbrParams>,
+    displacement_contributions_buf: gfx::handle::Buffer<back::Resources, DisplacementContribution>,
+    out_color: gfx::handle::RenderTargetView<back::Resources, ColorFormat>,
+    out_depth: gfx::handle::DepthStencilView<back::Resources, DepthFormat>,
+    default_joint_buffer_view: gfx::handle::ShaderResourceView<back::Resources, [f32; 4]>,
+    pso: PipelineStates,
+    map_default: Texture<[f32; 4]>,
+    shadow_default: Texture<f32>,
+    debug_quads: froggy::Storage<DebugQuad>,
+    size: (u32, u32),
+    font_cache: HashMap<PathBuf, Font>,
+    /// `ShadowType` of this `Renderer`.
+    pub shadow: ShadowType,
+}
+*/
+/*
+/// The format of the back buffer color requested from the windowing system.
+pub type ColorFormat = gfx::format::Rgba8;
+/// The format of the depth stencil buffer requested from the windowing system.
+pub type DepthFormat = gfx::format::DepthStencil;
+/// The format of the shadow buffer.
+pub type ShadowFormat = gfx::format::Depth32F;
+/// The concrete type of a basic pipeline.
+pub type BasicPipelineState = gfx::PipelineState<back::Resources, basic_pipe::Meta>;
+
+const MAX_LIGHTS: usize = 4;
+
+const STENCIL_SIDE: gfx::state::StencilSide = gfx::state::StencilSide {
+    fun: gfx::state::Comparison::Always,
+    mask_read: 0,
+    mask_write: 0,
+    op_fail: gfx::state::StencilOp::Keep,
+    op_depth_fail: gfx::state::StencilOp::Keep,
+    op_pass: gfx::state::StencilOp::Keep,
+};
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+quick_error! {
+    #[doc = "Error encountered when building pipelines."]
+    #[derive(Debug)]
+    pub enum PipelineCreationError {
+        #[doc = "GLSL compiler/linker error."]
+        Compilation(err: gfx::shade::ProgramError) {
+            from()
+            description("GLSL program compilation error")
+            display("GLSL program compilation error")
+            cause(err)
+        }
+
+        #[doc = "Pipeline state error."]
+        State(err: gfx::PipelineStateError<String>) {
+            from()
+            description("Pipeline state error")
+            display("Pipeline state error")
+            cause(err)
+        }
+
+        #[doc = "Standard I/O error."]
+        Io(err: io::Error) {
+            from()
+            description("I/O error")
+            display("I/O error")
+            cause(err)
+        }
+    }
+}
+
+/// Default values for type `Vertex`.
+pub const DEFAULT_VERTEX: Vertex = Vertex {
+    pos: [0.0, 0.0, 0.0, 1.0],
+    uv: [0.0, 0.0],
+    normal: [I8Norm(0), I8Norm(127), I8Norm(0), I8Norm(0)],
+    tangent: [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(0)],
+    joint_indices: [0.0, 0.0, 0.0, 0.0],
+    joint_weights: [1.0, 1.0, 1.0, 1.0],
+
+    displacement0: [0.0, 0.0, 0.0, 0.0],
+    displacement1: [0.0, 0.0, 0.0, 0.0],
+    displacement2: [0.0, 0.0, 0.0, 0.0],
+    displacement3: [0.0, 0.0, 0.0, 0.0],
+    displacement4: [0.0, 0.0, 0.0, 0.0],
+    displacement5: [0.0, 0.0, 0.0, 0.0],
+    displacement6: [0.0, 0.0, 0.0, 0.0],
+    displacement7: [0.0, 0.0, 0.0, 0.0],
+};
+
+impl Default for Vertex {
+    fn default() -> Self {
+        DEFAULT_VERTEX
+    }
+}
+
+#[cfg_attr(rustfmt, rustfmt_skip)]
+gfx_defines! {
+    vertex Vertex {
+        pos: [f32; 4] = "a_Position",
+        uv: [f32; 2] = "a_TexCoord",
+        normal: [gfx::format::I8Norm; 4] = "a_Normal",
+        tangent: [gfx::format::I8Norm; 4] = "a_Tangent",
+        joint_indices: [f32; 4] = "a_JointIndices",
+        joint_weights: [f32; 4] = "a_JointWeights",
+
+        displacement0: [f32; 4] = "a_Displacement0",
+        displacement1: [f32; 4] = "a_Displacement1",
+        displacement2: [f32; 4] = "a_Displacement2",
+        displacement3: [f32; 4] = "a_Displacement3",
+        displacement4: [f32; 4] = "a_Displacement4",
+        displacement5: [f32; 4] = "a_Displacement5",
+        displacement6: [f32; 4] = "a_Displacement6",
+        displacement7: [f32; 4] = "a_Displacement7",
+    }
+
+    constant Locals {
+        color: [f32; 4] = "u_Color",
+        mat_params: [f32; 4] = "u_MatParams",
+        uv_range: [f32; 4] = "u_UvRange",
+        mx_world: [[f32; 4]; 4] = "u_World",
+    }
+
+    constant LightParam {
+        projection: [[f32; 4]; 4] = "projection",
+        pos: [f32; 4] = "pos",
+        dir: [f32; 4] = "dir",
+        focus: [f32; 4] = "focus",
+        color: [f32; 4] = "color",
+        color_back: [f32; 4] = "color_back",
+        intensity: [f32; 4] = "intensity",
+        shadow_params: [i32; 4] = "shadow_params",
+    }
+
+    constant Globals {
+        mx_vp: [[f32; 4]; 4] = "u_ViewProj",
+        mx_inv_proj: [[f32; 4]; 4] = "u_InverseProj",
+        mx_view: [[f32; 4]; 4] = "u_View",
+        num_lights: u32 = "u_NumLights",
+    }
+
+    pipeline basic_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        cb_lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
+        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        tex_map: gfx::TextureSampler<[f32; 4]> = "t_Map",
+        shadow_map0: gfx::TextureSampler<f32> = "t_Shadow0",
+        shadow_map1: gfx::TextureSampler<f32> = "t_Shadow1",
+        out_color: gfx::BlendTarget<ColorFormat> =
+            ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::REPLACE),
+        out_depth: gfx::DepthStencilTarget<DepthFormat> =
+            (gfx::preset::depth::LESS_EQUAL_WRITE, gfx::state::Stencil {
+                front: STENCIL_SIDE, back: STENCIL_SIDE,
+            }),
+    }
+
+    pipeline shadow_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+        cb_locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        cb_globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        target: gfx::DepthTarget<ShadowFormat> =
+            gfx::preset::depth::LESS_EQUAL_WRITE,
+    }
+
+    constant QuadParams {
+        rect: [f32; 4] = "u_Rect",
+        depth: f32 = "u_Depth",
+    }
+
+    pipeline quad_pipe {
+        params: gfx::ConstantBuffer<QuadParams> = "b_Params",
+        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        resource: gfx::RawShaderResource = "t_Input",
+        sampler: gfx::Sampler = "t_Input",
+        target: gfx::RenderTarget<ColorFormat> = "Target0",
+        depth_target: gfx::DepthTarget<DepthFormat> =
+            gfx::preset::depth::LESS_EQUAL_TEST,
+    }
+
+    constant PbrParams {
+        base_color_factor: [f32; 4] = "u_BaseColorFactor",
+        camera: [f32; 3] = "u_Camera",
+        _padding0: f32 = "_padding0",
+        emissive_factor: [f32; 3] = "u_EmissiveFactor",
+        _padding1: f32 = "_padding1",
+        metallic_roughness: [f32; 2] = "u_MetallicRoughnessValues",
+        normal_scale: f32 = "u_NormalScale",
+        occlusion_strength: f32 = "u_OcclusionStrength",
+        pbr_flags: i32 = "u_PbrFlags",
+    }
+
+    constant DisplacementContribution {
+        position: f32 = "position",
+        normal: f32 = "normal",
+        tangent: f32 = "tangent",
+        weight: f32 = "weight",
+    }
+
+    pipeline pbr_pipe {
+        vbuf: gfx::VertexBuffer<Vertex> = (),
+
+        locals: gfx::ConstantBuffer<Locals> = "b_Locals",
+        globals: gfx::ConstantBuffer<Globals> = "b_Globals",
+        params: gfx::ConstantBuffer<PbrParams> = "b_PbrParams",
+        lights: gfx::ConstantBuffer<LightParam> = "b_Lights",
+        displacement_contributions: gfx::ConstantBuffer<DisplacementContribution> = "b_DisplacementContributions",
+        joint_transforms: gfx::ShaderResource<[f32; 4]> = "b_JointTransforms",
+
+        base_color_map: gfx::TextureSampler<[f32; 4]> = "u_BaseColorSampler",
+
+        normal_map: gfx::TextureSampler<[f32; 4]> = "u_NormalSampler",
+
+        emissive_map: gfx::TextureSampler<[f32; 4]> = "u_EmissiveSampler",
+
+        metallic_roughness_map: gfx::TextureSampler<[f32; 4]> = "u_MetallicRoughnessSampler",
+
+        occlusion_map: gfx::TextureSampler<[f32; 4]> = "u_OcclusionSampler",
+
+        color_target: gfx::RenderTarget<ColorFormat> = "Target0",
+        depth_target: gfx::DepthTarget<DepthFormat> = gfx::preset::depth::LESS_EQUAL_WRITE,
+    }
+}
+
+impl Default for DisplacementContribution {
+    fn default() -> Self {
+        Self { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 }
+    }
+}
+
+//TODO: private fields?
+#[derive(Clone, Debug)]
+pub(crate) struct GpuData {
+    pub slice: gfx::Slice<back::Resources>,
+    pub vertices: gfx::handle::Buffer<back::Resources, Vertex>,
+    pub constants: gfx::handle::Buffer<back::Resources, Locals>,
+    pub pending: Option<DynamicData>,
+    pub displacement_contributions: [DisplacementContribution; MAX_TARGETS],
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DynamicData {
+    pub num_vertices: usize,
+    pub buffer: gfx::handle::Buffer<back::Resources, Vertex>,
+}
+
+/// Shadow type is used to specify shadow's rendering algorithm.
+pub enum ShadowType {
+    /// Force no shadows.
+    Off,
+    /// Basic (and fast) single-sample shadows.
+    Basic,
+    /// Percentage-closest filter (PCF).
+    Pcf,
+}
+
+bitflags! {
+    struct PbrFlags: i32 {
+        const BASE_COLOR_MAP         = 1 << 0;
+        const NORMAL_MAP             = 1 << 1;
+        const METALLIC_ROUGHNESS_MAP = 1 << 2;
+        const EMISSIVE_MAP           = 1 << 3;
+        const OCCLUSION_MAP          = 1 << 4;
+    }
+}
+
+struct DebugQuad {
+    resource: gfx::handle::RawShaderResourceView<back::Resources>,
+    pos: [i32; 2],
+    size: [i32; 2],
+}
+
+/// All pipeline state objects used by the `three` renderer.
+pub struct PipelineStates {
+    /// Corresponds to `Material::Basic`.
+    mesh_basic_fill: BasicPipelineState,
+
+    /// Corresponds to `Material::Line`.
+    line_basic: BasicPipelineState,
+
+    /// Corresponds to `Material::Wireframe`.
+    mesh_basic_wireframe: BasicPipelineState,
+
+    /// Corresponds to `Material::Gouraud`.
+    mesh_gouraud: BasicPipelineState,
+
+    /// Corresponds to `Material::Phong`.
+    mesh_phong: BasicPipelineState,
+
+    /// Corresponds to `Material::Sprite`.
+    sprite: BasicPipelineState,
+
+    /// Used internally for shadow casting.
+    shadow: gfx::PipelineState<back::Resources, shadow_pipe::Meta>,
+
+    /// Used internally for rendering sprites.
+    quad: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
+
+    /// Corresponds to `Material::Pbr`.
+    pbr: gfx::PipelineState<back::Resources, pbr_pipe::Meta>,
+
+    /// Used internally for rendering `Background::Skybox`.
+    skybox: gfx::PipelineState<back::Resources, quad_pipe::Meta>,
+}
+
+impl PipelineStates {
+    /// Creates the set of pipeline states needed by the `three` renderer.
+    pub fn new(
+        src: &source::Set,
+        factory: &mut Factory,
+    ) -> Result<Self, PipelineCreationError> {
+        Self::init(src, &mut factory.backend)
+    }
+
+    /// Implementation of `PipelineStates::new`.
+    pub(crate) fn init(
+        src: &source::Set,
+        backend: &mut back::Factory,
+    ) -> Result<Self, PipelineCreationError> {
+        let basic = backend.create_shader_set(&src.basic.vs, &src.basic.ps)?;
+        let gouraud = backend.create_shader_set(&src.gouraud.vs, &src.gouraud.ps)?;
+        let phong = backend.create_shader_set(&src.phong.vs, &src.phong.ps)?;
+        let sprite = backend.create_shader_set(&src.sprite.vs, &src.sprite.ps)?;
+        let shadow = backend.create_shader_set(&src.shadow.vs, &src.shadow.ps)?;
+        let quad = backend.create_shader_set(&src.quad.vs, &src.quad.ps)?;
+        let pbr = backend.create_shader_set(&src.pbr.vs, &src.pbr.ps)?;
+        let skybox = backend.create_shader_set(&src.skybox.vs, &src.skybox.ps)?;
+
+        let rast_quad = gfx::state::Rasterizer::new_fill();
+        let rast_fill = gfx::state::Rasterizer::new_fill().with_cull_back();
+        let rast_wire = gfx::state::Rasterizer {
+            method: gfx::state::RasterMethod::Line(1),
+            ..rast_fill
+        };
+        let rast_shadow = gfx::state::Rasterizer {
+            offset: Some(gfx::state::Offset(2, 2)),
+            ..rast_fill
+        };
+
+        let pso_mesh_basic_fill = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_line_basic = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::LineStrip,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_basic_wireframe = backend.create_pipeline_state(
+            &basic,
+            gfx::Primitive::TriangleList,
+            rast_wire,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_gouraud = backend.create_pipeline_state(
+            &gouraud,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_mesh_phong = backend.create_pipeline_state(
+            &phong,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            basic_pipe::new(),
+        )?;
+        let pso_sprite = backend.create_pipeline_state(
+            &sprite,
+            gfx::Primitive::TriangleStrip,
+            rast_fill,
+            basic_pipe::Init {
+                out_color: ("Target0", gfx::state::ColorMask::all(), gfx::preset::blend::ALPHA),
+                ..basic_pipe::new()
+            },
+        )?;
+        let pso_shadow = backend.create_pipeline_state(
+            &shadow,
+            gfx::Primitive::TriangleList,
+            rast_shadow,
+            shadow_pipe::new(),
+        )?;
+        let pso_quad = backend.create_pipeline_state(
+            &quad,
+            gfx::Primitive::TriangleStrip,
+            rast_quad,
+            quad_pipe::new(),
+        )?;
+        let pso_skybox = backend.create_pipeline_state(
+            &skybox,
+            gfx::Primitive::TriangleStrip,
+            rast_quad,
+            quad_pipe::new(),
+        )?;
+        let pso_pbr = backend.create_pipeline_state(
+            &pbr,
+            gfx::Primitive::TriangleList,
+            rast_fill,
+            pbr_pipe::new(),
+        )?;
+
+        Ok(PipelineStates {
+            mesh_basic_fill: pso_mesh_basic_fill,
+            line_basic: pso_line_basic,
+            mesh_basic_wireframe: pso_mesh_basic_wireframe,
+            mesh_gouraud: pso_mesh_gouraud,
+            mesh_phong: pso_mesh_phong,
+            sprite: pso_sprite,
+            shadow: pso_shadow,
+            quad: pso_quad,
+            pbr: pso_pbr,
+            skybox: pso_skybox,
+        })
+    }
+}
+
+/// Handle for additional viewport to render some relevant debug information.
+/// See [`Renderer::debug_shadow_quad`](struct.Renderer.html#method.debug_shadow_quad).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct DebugQuadHandle(froggy::Pointer<DebugQuad>);
+
+/// Renders [`Scene`](struct.Scene.html) by [`Camera`](struct.Camera.html).
+///
+/// See [Window::render](struct.Window.html#method.render).
+pub struct OldRenderer {
+    device: back::Device,
+    encoder: gfx::Encoder<back::Resources, back::CommandBuffer>,
+    const_buf: gfx::handle::Buffer<back::Resources, Globals>,
+    quad_buf: gfx::handle::Buffer<back::Resources, QuadParams>,
+    light_buf: gfx::handle::Buffer<back::Resources, LightParam>,
+    pbr_buf: gfx::handle::Buffer<back::Resources, PbrParams>,
+    displacement_contributions_buf: gfx::handle::Buffer<back::Resources, DisplacementContribution>,
+    out_color: gfx::handle::RenderTargetView<back::Resources, ColorFormat>,
+    out_depth: gfx::handle::DepthStencilView<back::Resources, DepthFormat>,
+    default_joint_buffer_view: gfx::handle::ShaderResourceView<back::Resources, [f32; 4]>,
+    pso: PipelineStates,
+    map_default: Texture<[f32; 4]>,
+    shadow_default: Texture<f32>,
+    debug_quads: froggy::Storage<DebugQuad>,
+    size: (u32, u32),
+    font_cache: HashMap<PathBuf, Font>,
+    /// `ShadowType` of this `Renderer`.
+    pub shadow: ShadowType,
+}
+     */
+    
+/*
+        let vertex_shader = {
+            let mut source = read_file_to_end("gpu/triangle.vert").unwrap();
+            source.push(0);
+            factory.program_object(
+                gpu::program::Kind::Vertex,
+                cstr(&source),
+            )
+        };
+        let fragment_shader = {
+            let mut source = read_file_to_end("gpu/triangle.frag").unwrap();
+            source.push(0);
+            factory.program_object(
+                gpu::program::Kind::Fragment,
+                cstr(&source),
+            )
+        };
+        let (program, block_binding, sampler_binding) = {
+            let prog = factory.program(
+                &vertex_shader,
+                &fragment_shader,
+            );
+            let bname = cstr(b"UniformBlock\0");
+            let bbinding = factory.query_uniform_block_index(&prog, bname);
+            let sname = cstr(b"u_Sampler\0");
+            let sbinding = factory.query_uniform_index(&prog, sname);
+            (prog, bbinding.unwrap() as usize, sbinding.unwrap() as usize)
+        };
+
+        let vertex_buffer = factory.buffer(gpu::buffer::Kind::Array, gpu::buffer::Usage::StaticDraw);
+        factory.initialize_buffer(&vertex_buffer, TRIANGLE_DATA);
+
+        let uniform_buffer = factory.buffer(gpu::buffer::Kind::Uniform, gpu::buffer::Usage::DynamicDraw);
+        factory.initialize_buffer(&uniform_buffer, YELLOW);
+        
+        let position_accessor = gpu::buffer::Accessor::new(vertex_buffer, POSITION_FORMAT, 0, 0);
+        let mut vertex_array_builder = gpu::VertexArray::builder();
+        vertex_array_builder.attributes.insert(0, position_accessor);
+        let vertex_array = factory.vertex_array(vertex_array_builder);
+
+        let texture = factory.texture2(Default::default());
+        factory.initialize_texture2(
+            &texture,
+            true,
+            0x1908, // gl::RGBA8,
+            1,
+            1,
+            0x1908, // gl::RGBA,
+            0x1401, // gl::UNSIGNED_BYTE,
+            GREEN_PIXEL,
+        );
+            
+        let sampler = gpu::Sampler::from_texture2(texture);
 */

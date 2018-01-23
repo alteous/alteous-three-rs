@@ -100,6 +100,7 @@ impl Builder {
 
         let context = glutin::ContextBuilder::new()
             .with_vsync(self.vsync)
+            .with_gl(glutin::GlRequest::Specific(glutin::Api::OpenGl, (4, 0)))
             .with_multisampling(self.multisampling);
 
         let mut source_set = render::source::Set::default();
@@ -154,7 +155,7 @@ impl Window {
     /// Create new `Builder` with standard parameters.
     pub fn builder<T: Into<String>>(title: T) -> Builder {
         Builder {
-            dimensions: (1024, 768),
+            dimensions: (800, 800),
             fullscreen: false,
             multisampling: 0,
             shader_directory: None,

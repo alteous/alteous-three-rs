@@ -1,7 +1,5 @@
 extern crate three;
 
-use three::Object;
-
 fn main() {
     let (mut window, mut input, mut renderer, mut factory) =
         three::Window::new("Getting started with three-rs");
@@ -17,9 +15,8 @@ fn main() {
         color: 0xFFFF00,
         map: None,
     };
-    let mut mesh = factory.mesh(geometry, material);
-    mesh.set_parent(&scene);
-
+    let mesh = factory.mesh(geometry, material);
+    scene.add(&mesh);
     scene.background = three::Background::Color(0xC6F0FF);
 
     let center = [0.0, 0.0];

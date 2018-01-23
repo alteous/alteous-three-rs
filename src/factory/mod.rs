@@ -14,10 +14,11 @@ use render;
 use scene;
 
 use camera::Camera;
+use color::Color;
 use geometry::Geometry;
 use group::Group;
-use hub::Hub;
-//use light::{Ambient, Directional, Hemisphere, Point, ShadowMap};
+use hub::{Hub, SubLight};
+use light::{Ambient, Directional, Hemisphere, Point};
 use material::Material;
 use mesh::Mesh;
 use object::Object;
@@ -152,6 +153,7 @@ pub(crate) fn f2i(x: f32) -> I8Norm {
 }
 
 impl Factory {
+    /// Constructor.
     pub fn new<T: ::Context>(ctx: &T) -> Self {
         let backend = gpu::Factory::new(|sym| ctx.query_proc_address(sym));
         let hub = Hub::new();
@@ -159,6 +161,22 @@ impl Factory {
             backend,
             hub,
         }
+    }
+
+    /// Create a duplicate mesh with a different material.
+    pub fn mesh_duplicate<M: Into<Material>>(
+        &mut self,
+        mesh: &Mesh,
+        material: M,
+    ) -> Mesh {
+        let mut hub = self.hub.lock().unwrap();
+        let mut data = match hub[mesh.as_ref()].sub_node {
+            hub::SubNode::Visual(ref data) => data.clone(),
+            _ => unreachable!(),
+        };
+        data.material = material.into();
+        let object = hub.spawn_visual(data);
+        Mesh { object }
     }
 
     /// Create new `Mesh` with desired `Geometry` and `Material`.
@@ -170,7 +188,7 @@ impl Factory {
         let material = material.into();
         let vertices = render::make_vertices(&geometry);
         let visual_data = if geometry.faces.is_empty() {
-            let pipeline = render::Pipeline::Basic;
+            let pipeline = render::Pipeline::Solid;
             let mode = gpu::Mode::Arrays;
             let range = 0 .. vertices.len();
             let vertex_array = render::make_vertex_array(
@@ -189,7 +207,7 @@ impl Factory {
             }
         } else {
             let indices = geometry.faces.as_slice();
-            let pipeline = render::Pipeline::Basic;
+            let pipeline = render::Pipeline::Solid;
             let mode = gpu::Mode::Elements;
             let range = 0 .. 3 * indices.len();
             let vertex_array = render::make_vertex_array(
@@ -263,19 +281,78 @@ impl Factory {
 
     /// Create empty [`Group`](struct.Group.html).
     pub fn group(&mut self) -> Group {
-        Group::new(self.hub.lock().unwrap().spawn_empty())
+        Group::new(&mut *self.hub.lock().unwrap())
     }
-    
+
     /// Create new empty [`Scene`](struct.Scene.html).
     pub fn scene(&mut self) -> Scene {
-        let object = self.hub.lock().unwrap().spawn_scene();
         let hub = self.hub.clone();
         let background = scene::Background::Color(color::BLACK);
+        let first_child = None;
         Scene {
-            object,
             hub,
             background,
+            first_child,
         }
+    }
+
+    /// Create new `AmbientLight`.
+    pub fn ambient_light(
+        &mut self,
+        color: Color,
+        intensity: f32,
+    ) -> Ambient {
+        Ambient::new(self.hub.lock().unwrap().spawn_light(hub::LightData {
+            color,
+            intensity,
+            sub_light: SubLight::Ambient,
+            shadow: None,
+        }))
+    }
+
+    /// Create new `DirectionalLight`.
+    pub fn directional_light(
+        &mut self,
+        color: Color,
+        intensity: f32,
+    ) -> Directional {
+        Directional::new(self.hub.lock().unwrap().spawn_light(hub::LightData {
+            color,
+            intensity,
+            sub_light: SubLight::Directional,
+            shadow: None,
+        }))
+    }
+
+    /// Create new `HemisphereLight`.
+    pub fn hemisphere_light(
+        &mut self,
+        sky_color: Color,
+        ground_color: Color,
+        intensity: f32,
+    ) -> Hemisphere {
+        Hemisphere::new(self.hub.lock().unwrap().spawn_light(hub::LightData {
+            color: sky_color,
+            intensity,
+            sub_light: SubLight::Hemisphere {
+                ground: ground_color,
+            },
+            shadow: None,
+        }))
+    }
+
+    /// Create new `PointLight`.
+    pub fn point_light(
+        &mut self,
+        color: Color,
+        intensity: f32,
+    ) -> Point {
+        Point::new(self.hub.lock().unwrap().spawn_light(hub::LightData {
+            color,
+            intensity,
+            sub_light: SubLight::Point,
+            shadow: None,
+        }))
     }
 }
 
@@ -511,65 +588,6 @@ impl OldFactory {
             },
             None,
         ))
-    }
-
-    /// Create new `AmbientLight`.
-    pub fn ambient_light(
-        &mut self,
-        color: Color,
-        intensity: f32,
-    ) -> Ambient {
-        Ambient::new(self.hub.lock().unwrap().spawn_light(LightData {
-            color,
-            intensity,
-            sub_light: SubLight::Ambient,
-            shadow: None,
-        }))
-    }
-
-    /// Create new `DirectionalLight`.
-    pub fn directional_light(
-        &mut self,
-        color: Color,
-        intensity: f32,
-    ) -> Directional {
-        Directional::new(self.hub.lock().unwrap().spawn_light(LightData {
-            color,
-            intensity,
-            sub_light: SubLight::Directional,
-            shadow: None,
-        }))
-    }
-
-    /// Create new `HemisphereLight`.
-    pub fn hemisphere_light(
-        &mut self,
-        sky_color: Color,
-        ground_color: Color,
-        intensity: f32,
-    ) -> Hemisphere {
-        Hemisphere::new(self.hub.lock().unwrap().spawn_light(LightData {
-            color: sky_color,
-            intensity,
-            sub_light: SubLight::Hemisphere {
-                ground: ground_color,
-            },
-            shadow: None,
-        }))
-    }
-
-    /// Create new `PointLight`.
-    pub fn point_light(
-        &mut self,
-        color: Color,
-        intensity: f32,
-    ) -> Point {
-        Point::new(self.hub.lock().unwrap().spawn_light(LightData {
-            color,
-            intensity,
-            sub_light: SubLight::Point,
-            shadow: None,
-        }))
     }
 
     /// Create a `Sampler` with default properties.

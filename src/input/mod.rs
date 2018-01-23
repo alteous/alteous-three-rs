@@ -70,6 +70,7 @@ impl Input {
         }
     }
 
+    /// Update the per-frame input.
     pub fn update(&mut self) {
         self.reset();
         let mut events_loop = self.events_loop.take().unwrap();
@@ -89,7 +90,8 @@ impl Input {
                         ..
                     } => self.keyboard_input(state, keycode),
                     MouseInput { state, button, .. } => self.mouse_input(state, button),
-                    /****************************************************************************************CursorMoved {
+                    /*
+                    CursorMoved {
                         position: (x, y), ..
                     } => self.mouse_moved(
                         [x as f32, y as f32].into(),
@@ -135,7 +137,7 @@ impl Input {
     pub fn quit_requested(&self) -> bool {
         self.quit_requested
     }
-    
+
     /// Create new timer.
     pub fn time(&self) -> Timer {
         Timer {
@@ -273,7 +275,7 @@ impl Input {
         }
     }
 
-    pub(crate) fn mouse_moved(
+    pub(crate) fn _mouse_moved(
         &mut self,
         pos: mint::Point2<f32>,
         pos_ndc: mint::Point2<f32>,

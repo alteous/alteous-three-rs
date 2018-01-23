@@ -1,6 +1,5 @@
 //! Contains different types of light sources.
 
-use gfx;
 use object;
 use std::ops;
 
@@ -10,24 +9,11 @@ use hub::Operation;
 /// `ShadowMap` is used to render shadows from [`PointLight`](struct.PointLight.html)
 /// and [`DirectionalLight`](struct.DirectionalLight.html).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct ShadowMap {
-    pub(crate) resource: gfx::handle::ShaderResourceView<BackendResources, f32>,
-    pub(crate) target: gfx::handle::DepthStencilView<BackendResources, ShadowFormat>,
-}
+pub struct ShadowMap;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ShadowProjection {
     Orthographic(Orthographic),
-}
-
-impl ShadowMap {
-    pub(crate) fn to_target(&self) -> gfx::handle::DepthStencilView<BackendResources, ShadowFormat> {
-        self.target.clone()
-    }
-
-    pub(crate) fn to_resource(&self) -> gfx::handle::ShaderResourceView<BackendResources, f32> {
-        self.resource.clone()
-    }
 }
 
 /// Omni-directional, fixed-intensity and fixed-color light source that affects

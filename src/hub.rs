@@ -1,23 +1,26 @@
 use audio::{AudioData, Operation as AudioOperation};
 use color::Color;
-//use light::{ShadowMap, ShadowProjection};
+use light::{ShadowMap, ShadowProjection};
 use material::{self, Material};
 use mesh::MAX_TARGETS;
 use node::{NodeInternal, NodePointer};
-use object;
+use object::Base;
 use render::DisplacementContribution;
+use scene::Scene;
 use skeleton::{Bone, Skeleton};
 // use text::{Operation as TextOperation, TextData};
 
-use cgmath::Transform;
+use cgmath;
 use froggy;
 use gpu;
 use mint;
+use object;
 use render;
+use std::{mem, ops};
+use std::sync::mpsc;
 
-use std::ops;
+use cgmath::Transform;
 use std::sync::{Arc, Mutex};
-use std::sync::{atomic, mpsc};
 
 //TODO: private fields?
 #[derive(Clone, Debug)]
@@ -41,8 +44,6 @@ pub(crate) enum SubLight {
     Hemisphere { ground: Color },
     Point,
 }
-
-/*
 #[derive(Clone, Debug)]
 pub(crate) struct LightData {
     pub color: Color,
@@ -50,7 +51,6 @@ pub(crate) struct LightData {
     pub sub_light: SubLight,
     pub shadow: Option<(ShadowMap, ShadowProjection)>,
 }
-*/
 
 #[derive(Clone, Debug)]
 pub(crate) struct SkeletonData {
@@ -77,9 +77,9 @@ pub(crate) enum SubNode {
     /// No extra data, such as in the case of `Group`.
     Empty,
 
-    /// Marks the root object of a `Scene`.
-    Scene,
-
+    /// Group of sub-nodes.
+    Group { first_child: Option<NodePointer> },
+    
     /// Audio data.
     Audio(AudioData),
 
@@ -89,8 +89,8 @@ pub(crate) enum SubNode {
     /// Renderable 3D content, such as a mesh.
     Visual(VisualData),
 
-    // Lighting information for illumination and shadow casting.
-    //Light(LightData),
+    /// Lighting information for illumination and shadow casting.
+    Light(LightData),
 
     /// Array of `Bone` instances that may be bound to a `Skinned` mesh.
     Skeleton(SkeletonData),
@@ -98,8 +98,10 @@ pub(crate) enum SubNode {
 
 pub(crate) type Message = (froggy::WeakPointer<NodeInternal>, Operation);
 pub(crate) enum Operation {
+    AddChild(NodePointer),
+    RemoveChild(NodePointer),
+
     SetAudio(AudioOperation),
-    SetParent(NodePointer),
     SetVisible(bool),
     // SetText(TextOperation),
     SetTransform(
@@ -109,7 +111,7 @@ pub(crate) enum Operation {
     ),
     SetMaterial(Material),
     SetSkeleton(Skeleton),
-    // SetShadow(ShadowMap, ShadowProjection),
+    SetShadow(ShadowMap, ShadowProjection),
     SetTexelRange(mint::Point2<i16>, mint::Vector2<u16>),
     SetWeights([f32; MAX_TARGETS]),
 }
@@ -133,29 +135,7 @@ impl Hub {
         Arc::new(Mutex::new(hub))
     }
 
-    pub(crate) fn get<T>(
-        &self,
-        object: T,
-    ) -> &NodeInternal
-    where
-        T: AsRef<object::Base>,
-    {
-        let base: &object::Base = object.as_ref();
-        &self.nodes[&base.node]
-    }
-
-    pub(crate) fn get_mut<T>(
-        &mut self,
-        object: T,
-    ) -> &mut NodeInternal
-    where
-        T: AsRef<object::Base>,
-    {
-        let base: &object::Base = object.as_ref();
-        &mut self.nodes[&base.node]
-    }
-
-    fn spawn(
+    pub(crate) fn spawn(
         &mut self,
         sub: SubNode,
     ) -> object::Base {
@@ -175,14 +155,14 @@ impl Hub {
     ) -> object::Base {
         self.spawn(SubNode::Visual(visual_data))
     }
-/*
+
     pub(crate) fn spawn_light(
         &mut self,
         data: LightData,
     ) -> object::Base {
         self.spawn(SubNode::Light(data))
     }
-
+/*
     pub(crate) fn spawn_ui_text(
         &mut self,
         text: TextData,
@@ -190,25 +170,14 @@ impl Hub {
         self.spawn(SubNode::UiText(text))
     }
 */
-    pub(crate) fn spawn_audio_source(
+    pub(crate) fn _spawn_audio_source(
         &mut self,
         data: AudioData,
     ) -> object::Base {
         self.spawn(SubNode::Audio(data))
     }
 
-    pub(crate) fn spawn_scene(&mut self) -> object::Base {
-        static SCENE_UID_COUNTER: atomic::AtomicUsize = atomic::ATOMIC_USIZE_INIT;
-        let uid = SCENE_UID_COUNTER.fetch_add(1, atomic::Ordering::Relaxed);
-        let tx = self.message_tx.clone();
-        let node = self.nodes.create(NodeInternal {
-            scene_id: Some(uid),
-            ..SubNode::Scene.into()
-        });
-        object::Base { node, tx }
-    }
-
-    pub(crate) fn spawn_skeleton(
+    pub(crate) fn _spawn_skeleton(
         &mut self,
         data: SkeletonData,
     ) -> object::Base {
@@ -227,12 +196,53 @@ impl Hub {
                         Hub::process_audio(operation, data);
                     }
                 },
-                Operation::SetParent(parent) => {
-                    self.nodes[&ptr].parent = Some(parent);
-                }
+                Operation::AddChild(child_ptr) => {
+                    let sibling = match self.nodes[&ptr].sub_node {
+                        SubNode::Group { ref mut first_child } => {
+                            mem::replace(first_child, Some(child_ptr.clone()))
+                        },
+                        _ => unreachable!(),
+                    };
+                    let child = &mut self.nodes[&child_ptr];
+                    if child.next_sibling.is_some() {
+                        error!("Element {:?} is added to a group while still having old parent - {}", child.sub_node, "discarding siblings");
+                    }
+                    child.next_sibling = sibling;
+                },
+                Operation::RemoveChild(child_ptr) => {
+                    let next_sibling = self.nodes[&child_ptr].next_sibling.clone();
+                    let target_maybe = Some(child_ptr);
+                    let mut cur_ptr = match self.nodes[&ptr].sub_node {
+                        SubNode::Group { ref mut first_child } => {
+                            if *first_child == target_maybe {
+                                *first_child = next_sibling;
+                                continue;
+                            }
+                            first_child.clone()
+                        },
+                        _ => unreachable!(),
+                    };
+
+                    // TODO: consolidate the code with `Scene::remove()`
+                    loop {
+                        let node = match cur_ptr.take() {
+                            Some(next_ptr) => &mut self.nodes[&next_ptr],
+                            None => {
+                                error!("Unable to find child for removal");
+                                break;
+                            }
+                        };
+                        if node.next_sibling == target_maybe {
+                            node.next_sibling = next_sibling;
+                            break;
+                        }
+                        // TODO: avoid clone
+                        cur_ptr = node.next_sibling.clone();
+                    }
+                },
                 Operation::SetVisible(visible) => {
                     self.nodes[&ptr].visible = visible;
-                }
+                },
                 Operation::SetTransform(pos, rot, scale) => {
                     if let Some(pos) = pos {
                         self.nodes[&ptr].transform.disp = mint::Vector3::from(pos).into();
@@ -243,7 +253,7 @@ impl Hub {
                     if let Some(scale) = scale {
                         self.nodes[&ptr].transform.scale = scale;
                     }
-                }
+                },
                 Operation::SetMaterial(material) => {
                     if let SubNode::Visual(ref mut data) = self.nodes[&ptr].sub_node {
                         data.material = material;
@@ -269,13 +279,12 @@ impl Hub {
                         data.skeleton = Some(skeleton);
                     }
                 },
-                /*
                 Operation::SetShadow(map, proj) => {
                     if let SubNode::Light(ref mut data) = self.nodes[&ptr].sub_node {
                         data.shadow = Some((map, proj));
                     }
                 },
-
+                /*
                 Operation::SetWeights(weights) => {
                     fn set_weights(data: &mut VisualData, weights: [f32; MAX_TARGETS]) {
                         for i in 0 .. MAX_TARGETS {
@@ -322,10 +331,164 @@ impl Hub {
             AudioOperation::SetVolume(volume) => data.source.set_volume(volume),
         }
     }
+
+    pub(crate) fn update_graph(
+        &mut self,
+        scene: &Scene,
+    ) {
+        #[derive(Debug)]
+        struct Item {
+            parent: Option<NodePointer>,
+            ptr: NodePointer,
+        }
+
+        // Initialize a stack with the root node.
+        let mut stack = Vec::new();
+        if let Some(ptr) = scene.first_child.as_ref() {
+            stack.push(Item {
+                parent: None,
+                ptr: ptr.clone(),
+            });
+        }
+
+        // Perform depth-first traversal of the tree.
+        while let Some(item) = stack.pop() {
+            if let Some(ref parent) = item.parent {
+                self.nodes[&item.ptr].world_transform =
+                    self.nodes[parent].world_transform
+                        .concat(&self.nodes[&item.ptr].transform)
+            } else {
+                self.nodes[&item.ptr].world_transform =
+                    self.nodes[&item.ptr].transform.clone();
+            }
+
+            let next = self.nodes[&item.ptr].next_sibling.clone();
+            if let Some(ptr) = next {
+                stack.push(Item {
+                    parent: item.parent.clone(),
+                    ptr: ptr.clone(),
+                });
+            }
+
+            let first_child = {
+                if let SubNode::Group {
+                    first_child: Some(ref child),
+                } = self.nodes[&item.ptr].sub_node {
+                    Some(child.clone())
+                } else {
+                    None
+                }
+            };
+            if let Some(ptr) = first_child {
+                stack.push(Item {
+                    parent: Some(item.ptr.clone()),
+                    ptr: ptr.clone(),
+                });
+            }
+        }
+    }
+    
+    fn walk_impl(
+        &mut self,
+        base: NodePointer,
+    ) -> TreeWalker {
+        let default_stack_size = 10;
+        let mut walker = TreeWalker {
+            hub: self,
+            stack: Vec::with_capacity(default_stack_size),
+        };
+        walker.descend(base);
+        walker
+    }
+
+    pub(crate) fn walk(&mut self, base: NodePointer) -> TreeWalker {
+        self.walk_impl(base)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct WalkedNode {
+    pub(crate) ptr: NodePointer,
+}
+
+pub(crate) struct TreeWalker<'a> {
+    hub: &'a mut Hub,
+    stack: Vec<WalkedNode>,
+}
+
+impl<'a> TreeWalker<'a> {
+    fn descend(&mut self, base: NodePointer) -> Option<NodePointer> {
+        // Note: this is a CPU hotspot, presumably for copying stuff around
+        // TODO: profile carefully and optimize
+        let mut ptr: NodePointer = base.clone();
+
+        loop {
+            let wn = match self.stack.last() {
+                Some(parent) => {
+                    self.hub.nodes[&ptr].world_visible = self.hub.nodes[&parent.ptr].world_visible && self.hub.nodes[&ptr].visible;
+                    self.hub.nodes[&ptr].world_transform = self.hub.nodes[&parent.ptr].world_transform.concat(&self.hub.nodes[&ptr].transform);
+                    WalkedNode {
+                        ptr: ptr.clone(),
+                    }
+                },
+                None => WalkedNode {
+                    ptr: ptr.clone(),
+                },
+            };
+            self.stack.push(wn);
+
+            if !self.hub.nodes[&ptr].visible {
+                break;
+            }
+
+            ptr = match self.hub.nodes[&ptr].sub_node {
+                SubNode::Group { first_child: Some(ref ptr) } => {
+                    ptr.clone()
+                },
+                _ => break,
+            };
+        }
+
+        Some(ptr)
+    }
+}
+
+impl<'a> Iterator for TreeWalker<'a> {
+    type Item = WalkedNode;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(top) = self.stack.pop() {
+            let has_next_sibling = self.hub.nodes[&top.ptr].next_sibling.is_some();
+            if has_next_sibling {
+                let ptr = self.hub.nodes[&top.ptr].next_sibling.clone().unwrap();
+                self.descend(ptr);
+            }
+            if self.hub.nodes[&top.ptr].world_visible {
+                return Some(top)
+            }
+        }
+        None
+    }
+}
+
+impl<T: AsRef<Base>> ops::Index<T> for Hub {
+    type Output = NodeInternal;
+    fn index(&self, i: T) -> &Self::Output {
+        let base: &Base = i.as_ref();
+        &self.nodes[&base.node]
+    }
+}
+
+impl<T: AsRef<Base>> ops::IndexMut<T> for Hub {
+    fn index_mut(&mut self, i: T) -> &mut Self::Output {
+        let base: &Base = i.as_ref();
+        &mut self.nodes[&base.node]
+    }
+}
 /*
-    fn process_text(
-        operation: TextOperation,
-        data: &mut TextData,
+fn process_text(
+operation: TextOperation,
+data: &mut TextData,
     ) {
         use gfx_glyph::Scale;
         match operation {
@@ -343,7 +506,7 @@ impl Hub {
             TextOperation::Text(text) => data.section.text[0].text = text,
         }
     }
-*/
+
     pub(crate) fn update_graph(&mut self) {
         let mut cursor = self.nodes.cursor();
         while let Some((left, mut item, _)) = cursor.next() {
@@ -370,7 +533,7 @@ impl Hub {
             item.world_transform = transform;
         }
     }
-/*
+
     pub(crate) fn update_mesh(
         &mut self,
         mesh: &DynamicMesh,
@@ -381,4 +544,3 @@ impl Hub {
         }
     }
 */
-}

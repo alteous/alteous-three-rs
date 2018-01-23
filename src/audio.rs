@@ -25,7 +25,7 @@ pub struct Clip {
 }
 
 impl Clip {
-    pub(crate) fn new(data: Vec<u8>) -> Self {
+    pub(crate) fn _new(data: Vec<u8>) -> Self {
         Clip {
             data: Rc::new(data),
             repeat: false,
@@ -92,7 +92,7 @@ pub(crate) struct AudioData {
 }
 
 impl AudioData {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn _new() -> Self {
         // TODO: Change to `r::default_endpoint()` in next `rodio` release.
         #[allow(deprecated)]
         let endpoint = if let Some(endpoint) = r::get_default_endpoint() {
@@ -119,7 +119,7 @@ pub struct Source {
 three_object!(Source::object);
 
 impl Source {
-    pub(crate) fn with_object(object: object::Base) -> Self {
+    pub(crate) fn _with_object(object: object::Base) -> Self {
         Source { object }
     }
 
