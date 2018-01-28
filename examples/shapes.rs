@@ -37,7 +37,7 @@ fn main() {
     };
     sphere.set_position([-3.0, 3.0, 0.0]);
     scene.add(&sphere);
-/*
+
     let line = {
         let geometry = three::Geometry::with_vertices(vec![
             [-2.0, -1.0, 0.0].into(),
@@ -49,7 +49,7 @@ fn main() {
     };
     line.set_position([3.0, 3.0, 0.0]);
     scene.add(&line);
-*/
+
     let mut angle = cgmath::Rad::zero();
     while !input.quit_requested() && !input.hit(three::KEY_ESCAPE) {
         input.update();
@@ -59,9 +59,9 @@ fn main() {
             cuboid.set_orientation(q);
             cylinder.set_orientation(q);
             sphere.set_orientation(q);
-            // line.set_orientation(q);
+            line.set_orientation(q);
         }
-        renderer.render(&scene, &camera);
+        renderer.render(&scene, &camera, &window);
         window.swap_buffers();
     }
 }

@@ -1,13 +1,10 @@
-/// Solid render pipeline.
-pub mod solid;
+/// Forward render pipelines.
+pub mod forward;
 
 use gpu::{self, buffer as buf};
-use std::mem;
-
-use std::path::Path;
 use util::{cstr, read_file_to_cstring};
 
-pub use self::solid::Pipeline as Solid;
+pub use self::forward::Forward;
 
 /// 4x4 identity matrix.
 pub const IDENTITY: [[f32; 4]; 4] = [
@@ -50,17 +47,13 @@ pub struct UniformBlockBinding<T: 'static + Clone> {
 }
 
 /// Make a vertex shader + fragment shader program.
-pub fn make_program<P1, P2>(
+pub fn make_program(
     factory: &gpu::Factory,
-    vertex_shader_path: P1,
-    fragment_shader_path: P2 ,
-) -> gpu::Program
-where
-    P1: AsRef<Path>,
-    P2: AsRef<Path>,
-{
+    vertex_shader_path: &str,
+    fragment_shader_path: &str,
+) -> gpu::Program {
     let vertex_shader = {
-        let source = read_file_to_cstring(vertex_shader_path).unwrap();
+        let mut source = read_file_to_cstring(vertex_shader_path).unwrap();
         factory.program_object(gpu::program::Kind::Vertex, &source)
     };
     let fragment_shader = {

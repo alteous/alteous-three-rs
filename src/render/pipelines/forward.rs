@@ -41,10 +41,13 @@ pub struct Locals {
     pub u_Color: [f32; 4],
 }
 
-/// Solid pipeline.
-pub struct Pipeline {
+/// Forward rendering pipeline.
+pub struct Forward {
     /// Linked program.
     pub program: gpu::Program,
+
+    /// Draw state.
+    pub state: gpu::State,
 
     /// Locals uniform buffer.
     pub locals: gpu::Buffer,
@@ -53,12 +56,34 @@ pub struct Pipeline {
     pub globals: gpu::Buffer,
 }
 
-impl Pipeline {
-    /// Initialize the solid pipeline.
-    pub fn new(factory: &gpu::Factory) -> Self {
-        let program = make_program(factory, "shader.vert", "shader.frag");
-        let locals = make_uniform_buffer(factory, &program, &LOCALS);
-        let globals = make_uniform_buffer(factory, &program, &GLOBALS);
-        Pipeline { program, locals, globals }
+/// Creates a solid rendering pipeline.
+pub fn solid(factory: &gpu::Factory) -> Forward {
+    let program = make_program(factory, "shader.vert", "shader.frag");
+    let locals = make_uniform_buffer(factory, &program, &LOCALS);
+    let globals = make_uniform_buffer(factory, &program, &GLOBALS);
+    let state = gpu::State::default();
+    Forward {
+        program,
+        state,
+        locals,
+        globals,
+    }
+}
+
+/// Creates a wireframe rendering pipeline.
+pub fn wireframe(factory: &gpu::Factory) -> Forward {
+    let program = make_program(factory, "shader.vert", "shader.frag");
+    let locals = make_uniform_buffer(factory, &program, &LOCALS);
+    let globals = make_uniform_buffer(factory, &program, &GLOBALS);
+    let state = gpu::State {
+        culling: gpu::pipeline::Culling::None,
+        polygon_mode: gpu::pipeline::PolygonMode::Line(1),
+        .. Default::default()
+    };
+    Forward {
+        program,
+        state,
+        locals,
+        globals,
     }
 }

@@ -261,7 +261,8 @@ pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGE
 ];
 
 struct Pipelines {
-    solid: pipelines::Solid,
+    solid: pipelines::Forward,
+    wireframe: pipelines::Forward,
 }
 
 /// Three renderer.
@@ -274,7 +275,8 @@ impl Renderer {
     /// Constructor.
     pub fn new(factory: Factory) -> Self {
         let pipelines = Pipelines {
-            solid: pipelines::Solid::new(&factory),
+            solid: pipelines::forward::solid(&factory),
+            wireframe: pipelines::forward::wireframe(&factory),
         };
         Self {
             factory,
@@ -317,27 +319,32 @@ impl Renderer {
                 let mx_world: [[f32; 4]; 4] =
                     ::cgmath::Matrix4::from(node.world_transform.clone())
                     .into();
+                let pipe = match data.material {
+                    Material::Wireframe(_) | Material::Line(_) => {
+                        &self.pipelines.wireframe
+                    },
+                    _ => &self.pipelines.solid,
+                };
                 let invocation = {
-                    use self::pipelines::solid;
-                    let pipe = &self.pipelines.solid;
-                    let locals = solid::Locals {
+                    use self::pipelines::forward::{LOCALS, Locals, GLOBALS, Globals};
+                    let locals = Locals {
                         u_Color: [1.0, 1.0, 0.0, 0.0],
                         u_World: mx_world,
                     };
                     self.factory.overwrite_buffer(
                         pipe.locals.slice(
                             0,
-                            mem::size_of::<solid::Locals>(),
+                            mem::size_of::<Locals>(),
                         ),
                         &[locals],
                     );
-                    let globals = solid::Globals {
+                    let globals = Globals {
                         u_ViewProjection: mx_view_projection.clone(),
                     };
                     self.factory.overwrite_buffer(
                         pipe.globals.slice(
                             0,
-                            mem::size_of::<solid::Globals>(),
+                            mem::size_of::<Globals>(),
                         ),
                         &[globals],
                     );
@@ -347,9 +354,9 @@ impl Renderer {
                         samplers: gpu::ArrayVec::new(),
                     };
                     invocation.uniforms
-                        .push((solid::LOCALS.index, &pipe.locals));
+                        .push((LOCALS.index, &pipe.locals));
                     invocation.uniforms
-                        .push((solid::GLOBALS.index, &pipe.globals));
+                        .push((GLOBALS.index, &pipe.globals));
                     invocation
                 };
                 /*
@@ -391,10 +398,9 @@ impl Renderer {
                     offset: data.range.start,
                     count: data.range.end - data.range.start,
                 };
-                let state = gpu::State::default();
                 self.factory.draw(
                     framebuffer.as_ref(),
-                    &state,
+                    &pipe.state,
                     &data.vertex_array,
                     &draw_call,
                     &invocation,
