@@ -18,7 +18,7 @@ pub use self::source::Source;
 use camera::Camera;
 use factory::Factory;
 use geometry::Geometry;
-use hub:: SubNode;
+use hub::SubNode;
 //use light::{ShadowMap, ShadowProjection};
 use material::Material;
 use mesh::MAX_TARGETS;
@@ -377,10 +377,11 @@ impl Renderer {
     }
 
     /// Render everything in the scene as viewed by the given camera.
-    pub fn render(
+    pub fn render<T: AsRef<::Framebuffer>>(
         &mut self,
         scene: &Scene,
         camera: &Camera,
+        framebuffer: &T,
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
 
@@ -481,7 +482,10 @@ impl Renderer {
                     offset: data.range.start,
                     count: data.range.end - data.range.start,
                 };
+                let state = gpu::State::default();
                 self.factory.draw(
+                    framebuffer.as_ref(),
+                    &state,
                     &data.vertex_array,
                     &draw_call,
                     &invocation,

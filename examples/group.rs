@@ -133,6 +133,7 @@ fn main() {
 
     let camera = factory.perspective_camera(60.0, 1.0 .. 100.0);
     camera.look_at([-1.8, -8.0, 7.0], [0.0, 0.0, 3.5], None);
+    scene.add(&camera);
 
     let light = factory.point_light(0xffffff, 1.0);
     light.set_position([0.0, -10.0, 10.0]);
@@ -147,7 +148,7 @@ fn main() {
     scene.add(&cubes[0]);
 
     let timer = input.time();
-    while !input.quit_requested() {
+    while !input.quit_requested() && !input.hit(three::KEY_ESCAPE) {
         input.update();
         let time = timer.get(&input);
         for cube in cubes.iter_mut() {
@@ -157,7 +158,7 @@ fn main() {
             cube.group.set_orientation(q);
         }
 
-        renderer.render(&scene, &camera);
+        renderer.render(&scene, &camera, &window);
         window.swap_buffers();
     }
 }

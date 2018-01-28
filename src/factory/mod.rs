@@ -154,13 +154,16 @@ pub(crate) fn f2i(x: f32) -> I8Norm {
 
 impl Factory {
     /// Constructor.
-    pub fn new<T: ::Context>(ctx: &T) -> Self {
-        let backend = gpu::Factory::new(|sym| ctx.query_proc_address(sym));
+    pub fn new<T: ::Context>(ctx: &T) -> (::Framebuffer, Self) {
+        let (framebuffer, backend) = gpu::init(|sym| ctx.query_proc_address(sym));
         let hub = Hub::new();
-        Factory {
-            backend,
-            hub,
-        }
+        (
+            framebuffer,
+            Factory {
+                backend,
+                hub,
+            },
+        )
     }
 
     /// Create a duplicate mesh with a different material.

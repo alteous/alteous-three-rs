@@ -375,5 +375,6 @@ pub use sprite::Sprite;
 #[doc(inline)]
 pub use window::Window;
 
+pub use gpu::Framebuffer;
 pub use gpu::Texture2 as Texture;
 pub use gpu::texture::{Filter as FilterMethod, Wrap as WrapMode};

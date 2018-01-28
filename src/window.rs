@@ -4,6 +4,7 @@ use glutin;
 use glutin::{GlContext, GlWindow};
 use mint;
 use render;
+use std::mem;
 
 use factory::Factory;
 use input::Input;
@@ -17,11 +18,18 @@ use std::os::raw::c_void;
 /// [`Factory`](struct.Factory.html) and [`Renderer`](struct.Renderer.html).
 pub struct Window {
     window: glutin::GlWindow,
+    framebuffer: ::Framebuffer,
 }
 
 impl ::Context for Window {
     fn query_proc_address(&self, symbol: &str) -> *const c_void {
         self.window.get_proc_address(symbol) as *const c_void
+    }
+}
+
+impl AsRef<::Framebuffer> for Window {
+    fn as_ref(&self) -> &::Framebuffer {
+        &self.framebuffer
     }
 }
 
@@ -138,8 +146,14 @@ impl Builder {
 
         let glx = GlWindow::new(builder, context, &events_loop).unwrap();
         unsafe { glx.make_current().expect("GL context bind failed") };
-        let window = Window {  window: glx };
-        let factory = Factory::new(&window);
+        let mut window = Window {
+            window: glx,
+            framebuffer: unsafe {
+                mem::uninitialized()
+            },
+        };
+        let (framebuffer, factory) = Factory::new(&window);
+        window.framebuffer = framebuffer;
         let renderer = Renderer::new(factory.clone());
         let input = Input::new(events_loop);
         (window, input, renderer, factory)
