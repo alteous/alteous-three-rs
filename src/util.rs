@@ -9,7 +9,7 @@ use std::io::Read;
 /// let foo = cstr(b"foo\0");
 /// ```
 pub fn cstr<'a, T>(bytes: &'a T) -> &'a ffi::CStr
-    where T: AsRef<[u8]>
+    where T: AsRef<[u8]> + ?Sized
 {
     ffi::CStr::from_bytes_with_nul(bytes.as_ref()).expect("missing NUL byte")
 }
@@ -55,4 +55,11 @@ pub fn read_file_to_string<P>(path: P) -> io::Result<String>
             }
         }
     }
+}
+
+/// Reads the entire contents of a file into a `CString`.
+pub fn read_file_to_cstring<P>(path: P) -> io::Result<ffi::CString>
+    where P: AsRef<path::Path>
+{
+    read_file_to_end(path).map(|vec| ffi::CString::new(vec).unwrap())
 }

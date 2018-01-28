@@ -1,14 +1,13 @@
 //! The renderer.
 
-use color;
 use gfx;
 use gfx::format::I8Norm;
 use gpu;
 use glutin;
 use mint;
-use util;
 use itertools::Either;
 
+pub mod pipelines;
 pub mod source;
 
 use std::{iter, mem};
@@ -261,54 +260,8 @@ pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGE
     DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
 ];
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum Pipeline {
-    /// Solid color program pipeline.
-    Solid,
-}
-
-#[allow(non_snake_case)]
-#[repr(C)]
-struct SolidGlobals {
-    pub u_World: [[f32; 4]; 4],
-    pub u_ViewProjection: [[f32; 4]; 4],
-}
-
-impl Default for SolidGlobals {
-    fn default() -> Self {
-        use ::cgmath::SquareMatrix;
-        Self {
-            u_World: ::cgmath::Matrix4::identity().into(),
-            u_ViewProjection: ::cgmath::Matrix4::identity().into(),
-        }
-    }
-}
-
-#[allow(non_snake_case)]
-#[repr(C)]
-struct SolidLocals {
-    pub u_Color: [f32; 4],
-}
-
-impl Default for SolidLocals {
-    fn default() -> Self {
-        Self {
-            u_Color: [0.0; 4],
-        }
-    }
-}
-
-#[allow(non_snake_case)]
-#[derive(Clone)]
-struct Solid {
-    program: gpu::Program,
-    locals: (u32, gpu::Buffer),
-    globals: (u32, gpu::Buffer),
-}
-
-#[derive(Clone)]
 struct Pipelines {
-    solid: Solid,
+    solid: pipelines::Solid,
 }
 
 /// Three renderer.
@@ -320,55 +273,8 @@ pub struct Renderer {
 impl Renderer {
     /// Constructor.
     pub fn new(factory: Factory) -> Self {
-        let vertex_shader = {
-            let mut source = util::read_file_to_end("shader.vert").unwrap();
-            source.push(0);
-            factory.program_object(
-                gpu::program::Kind::Vertex,
-                util::cstr(&source),
-            )
-        };
-        let fragment_shader = {
-            let mut source = util::read_file_to_end("shader.frag").unwrap();
-            source.push(0);
-            factory.program_object(
-                gpu::program::Kind::Fragment,
-                util::cstr(&source),
-            )
-        };
-        let program = factory.program(&vertex_shader, &fragment_shader);
-        let locals = {
-            let name = util::cstr(b"b_Locals\0");
-            factory.set_uniform_block_binding(&program, name, 0);
-            let buf = factory.buffer(
-                gpu::buffer::Kind::Uniform,
-                gpu::buffer::Usage::DynamicDraw,
-            );
-            factory.initialize_buffer(
-                &buf,
-                &[SolidLocals::default()],
-            );
-            (0, buf)
-        };
-        let globals = {
-            let name = util::cstr(b"b_Globals\0");
-            let idx = factory.set_uniform_block_binding(&program, name, 1);
-            let buf = factory.buffer(
-                gpu::buffer::Kind::Uniform,
-                gpu::buffer::Usage::DynamicDraw,
-            );
-            factory.initialize_buffer(
-                &buf,
-                &[SolidGlobals::default()],
-            );
-            (1, buf)
-        };
         let pipelines = Pipelines {
-            solid: Solid {
-                program,
-                locals,
-                globals,
-            },
+            solid: pipelines::Solid::new(&factory),
         };
         Self {
             factory,
@@ -412,25 +318,26 @@ impl Renderer {
                     ::cgmath::Matrix4::from(node.world_transform.clone())
                     .into();
                 let invocation = {
+                    use self::pipelines::solid;
                     let pipe = &self.pipelines.solid;
-                    let locals = SolidLocals {
+                    let locals = solid::Locals {
                         u_Color: [1.0, 1.0, 0.0, 0.0],
+                        u_World: mx_world,
                     };
                     self.factory.overwrite_buffer(
-                        pipe.locals.1.slice(
+                        pipe.locals.slice(
                             0,
-                            mem::size_of::<SolidLocals>(),
+                            mem::size_of::<solid::Locals>(),
                         ),
                         &[locals],
                     );
-                    let globals = SolidGlobals {
-                        u_World: mx_world,
+                    let globals = solid::Globals {
                         u_ViewProjection: mx_view_projection.clone(),
                     };
                     self.factory.overwrite_buffer(
-                        pipe.globals.1.slice(
+                        pipe.globals.slice(
                             0,
-                            mem::size_of::<SolidGlobals>(),
+                            mem::size_of::<solid::Globals>(),
                         ),
                         &[globals],
                     );
@@ -439,8 +346,10 @@ impl Renderer {
                         uniforms: gpu::ArrayVec::new(),
                         samplers: gpu::ArrayVec::new(),
                     };
-                    invocation.uniforms.push((pipe.locals.0, &pipe.locals.1));
-                    invocation.uniforms.push((pipe.globals.0, &pipe.globals.1));
+                    invocation.uniforms
+                        .push((solid::LOCALS.index, &pipe.locals));
+                    invocation.uniforms
+                        .push((solid::GLOBALS.index, &pipe.globals));
                     invocation
                 };
                 /*

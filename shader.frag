@@ -1,6 +1,7 @@
 #version 140
 
 layout(std140) uniform b_Locals {
+    mat4 u_World;
     vec4 u_Color;
 };
 

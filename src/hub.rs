@@ -10,12 +10,10 @@ use scene::Scene;
 use skeleton::{Bone, Skeleton};
 // use text::{Operation as TextOperation, TextData};
 
-use cgmath;
 use froggy;
 use gpu;
 use mint;
 use object;
-use render;
 use std::{mem, ops};
 use std::sync::mpsc;
 
@@ -66,7 +64,6 @@ pub(crate) struct VisualData {
     pub skeleton: Option<Skeleton>,
 
     // Draw parameters
-    pub pipeline: render::Pipeline,
     pub range: ops::Range<usize>,
     pub mode: gpu::Mode,
     pub vertex_array: gpu::VertexArray,

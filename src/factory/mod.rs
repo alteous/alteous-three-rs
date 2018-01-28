@@ -191,7 +191,6 @@ impl Factory {
         let material = material.into();
         let vertices = render::make_vertices(&geometry);
         let visual_data = if geometry.faces.is_empty() {
-            let pipeline = render::Pipeline::Solid;
             let mode = gpu::Mode::Arrays;
             let range = 0 .. vertices.len();
             let vertex_array = render::make_vertex_array(
@@ -203,14 +202,12 @@ impl Factory {
             hub::VisualData {
                 material,
                 skeleton,
-                pipeline,
                 mode,
                 range,
                 vertex_array,
             }
         } else {
             let indices = geometry.faces.as_slice();
-            let pipeline = render::Pipeline::Solid;
             let mode = gpu::Mode::Elements;
             let range = 0 .. 3 * indices.len();
             let vertex_array = render::make_vertex_array(
@@ -222,7 +219,6 @@ impl Factory {
             hub::VisualData {
                 material,
                 skeleton,
-                pipeline,
                 mode,
                 range,
                 vertex_array,

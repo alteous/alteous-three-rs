@@ -8,8 +8,12 @@ layout(location = 4) in uvec4 a_JointIndices;
 layout(location = 5) in vec4 a_JointWeights;
 
 layout(std140) uniform b_Globals {
-    mat4 u_World;
     mat4 u_ViewProjection;
+};
+
+layout(std140) uniform b_Locals {
+    mat4 u_World;
+    vec4 u_Color;
 };
 
 out float v_Depth;
