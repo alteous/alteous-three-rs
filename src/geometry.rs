@@ -74,8 +74,8 @@ pub struct Geometry {
 /// Properties for vertex skinning.
 #[derive(Clone, Debug, Default)]
 pub struct Joints {
-    /// Joint indices, encoded as floats.
-    pub indices: Vec<[f32; 4]>,
+    /// Indices of bones in the parent skeleton.
+    pub indices: Vec<[u16; 4]>,
     /// Joint weights.
     pub weights: Vec<[f32; 4]>,
 }

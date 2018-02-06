@@ -65,7 +65,7 @@ pub(crate) struct VisualData {
 
     // Draw parameters
     pub range: ops::Range<usize>,
-    pub mode: gpu::Mode,
+    pub kind: gpu::draw_call::Kind,
     pub vertex_array: gpu::VertexArray,
 }
 

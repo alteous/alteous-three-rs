@@ -16,8 +16,8 @@ exclude = ["doc", "bors.toml", ".travis.yml", "test_data"]
 [lib]
 
 [features]
-default = ["opengl"]
-"opengl" = ["gfx_device_gl", "gfx_window_glutin", "glutin"]
+default = ["window"]
+window = ["glutin"]
 
 [build-dependencies]
 includedir_codegen = "0.2.0"

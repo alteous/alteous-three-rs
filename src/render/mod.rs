@@ -1,21 +1,24 @@
 //! The renderer.
 
-use gfx;
-use gfx::format::I8Norm;
 use gpu;
 use glutin;
 use mint;
-use itertools::Either;
+use std::{iter, mem};
 
-pub mod pipelines;
+pub mod pipeline;
 pub mod source;
 
-use std::{iter, mem};
+use itertools::Either;
+use Framebuffer;
 
 pub use self::source::Source;
 
+/// Normalized signed 8-bit rational.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[repr(C)]
+pub struct I8Norm(pub i8);
+
 use camera::Camera;
-use factory::Factory;
 use geometry::Geometry;
 use hub::SubNode;
 //use light::{ShadowMap, ShadowProjection};
@@ -24,13 +27,15 @@ use mesh::MAX_TARGETS;
 use scene::Scene;
 //use text::Font;
 
+const NORMAL_Z: [I8Norm; 3] = [I8Norm(0), I8Norm(127), I8Norm(0)];
+const TANGENT_X: [I8Norm; 4] = [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(127)];
+
 /// Default values for type `Vertex`.
 pub const DEFAULT_VERTEX: Vertex = Vertex {
     a_Position: [0.0, 0.0, 0.0, 1.0],
     a_TexCoord: [0.0, 0.0],
-    a_Normal: [I8Norm(0), I8Norm(127), I8Norm(0), I8Norm(0)],
-    a_Tangent: [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(0)],
-
+    a_Normal: NORMAL_Z,
+    a_Tangent: TANGENT_X,
     a_JointIndices: [0, 0, 0, 0],
     a_JointWeights: [1.0, 1.0, 1.0, 1.0],
 };
@@ -38,20 +43,6 @@ pub const DEFAULT_VERTEX: Vertex = Vertex {
 impl Default for Vertex {
     fn default() -> Self {
         DEFAULT_VERTEX
-    }
-}
-
-macro_rules! offset_of {
-    ($T:ty, $field:ident) => {
-        unsafe {
-            let obj: $T = ::std::mem::uninitialized();
-            let obj_ptr: *const u8 = ::std::mem::transmute(&obj);
-            let member_ptr: *const u8 = ::std::mem::transmute(&obj.$field);
-
-            ::std::mem::forget(obj);
-
-            (member_ptr as usize) - (obj_ptr as usize)
-        }
     }
 }
 
@@ -67,29 +58,21 @@ pub struct Vertex {
     pub a_TexCoord: [f32; 2],
 
     /// Vertex normal in local co-ordinate space.
-    pub a_Normal: [gfx::format::I8Norm; 4],
+    pub a_Normal: [I8Norm; 3],
 
     /// Vertex tangent in local co-ordinate space
     /// in the form `[x, y, z, w]` where `w` defines
     /// handedness of the tangent.
-    pub a_Tangent: [gfx::format::I8Norm; 4],
+    pub a_Tangent: [I8Norm; 4],
 
     /// Indices of joint matrices.
-    pub a_JointIndices: [u32; 4],
+    pub a_JointIndices: [u16; 4],
 
     /// Weights of joint matrix contributions.
     pub a_JointWeights: [f32; 4],
 }
 
 use gpu::buffer::Format;
-
-const NORMAL_Z: [I8Norm; 4] = [
-    I8Norm(0), I8Norm(0), I8Norm(1), I8Norm(0)
-];
-
-const TANGENT_X: [I8Norm; 4] = [
-    I8Norm(1), I8Norm(0), I8Norm(0),  I8Norm(1)
-];
 
 use factory::f2i;
 
@@ -103,7 +86,7 @@ pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
             geometry
                 .normals
                 .iter()
-                .map(|n| [f2i(n.x), f2i(n.y), f2i(n.z), I8Norm(0)]),
+                .map(|n| [f2i(n.x), f2i(n.y), f2i(n.z)]),
         )
     };
     let tex_coord_iter = if geometry.tex_coords.is_empty() {
@@ -124,11 +107,7 @@ pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
     let joint_indices_iter = if geometry.joints.indices.is_empty() {
         Either::Left(iter::repeat([0, 0, 0, 0]))
     } else {
-        Either::Right(
-            geometry.joints.indices
-                .iter()
-                .map(|x| [x[0] as u32, x[1] as u32, x[2] as u32, x[3] as u32])
-        )
+        Either::Right(geometry.joints.indices.iter().cloned())
     };
     let joint_weights_iter = if geometry.joints.weights.is_empty() {
         Either::Left(iter::repeat([1.0, 1.0, 1.0, 1.0]))
@@ -166,72 +145,62 @@ pub fn make_vertex_array(
     indices: Option<&[[u32; 3]]>,
     vertices: &[Vertex],
 ) -> gpu::VertexArray {
-    let vertex_buffer = factory.buffer(buf::Kind::Array, buf::Usage::StaticDraw);
-    factory.initialize_buffer(&vertex_buffer, vertices);
+    let vbuf = factory.buffer(buf::Kind::Array, buf::Usage::StaticDraw);
+    factory.initialize_buffer(&vbuf, vertices);
 
-    let position = gpu::Accessor::new(
-        vertex_buffer.clone(),
-        Format::Float { bits: 32, size: 3 },
-        offset_of!(Vertex, a_Position),
+    let positions = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::F32(3),
+        offset_of!(Vertex::a_Position),
         mem::size_of::<Vertex>(),
     );
-    let tex_coord = gpu::Accessor::new(
-        vertex_buffer.clone(),
-        Format::Float { bits: 32, size: 2 },
-        offset_of!(Vertex, a_TexCoord),
+    let tex_coords = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::F32(2),
+        offset_of!(Vertex::a_TexCoord),
         mem::size_of::<Vertex>(),
     );
-    let normal = gpu::Accessor::new(
-        vertex_buffer.clone(),
-        Format::Signed { bits: 8, size: 4, norm: true },
-        offset_of!(Vertex, a_Normal),
+    let normals = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::I8Norm(3),
+        offset_of!(Vertex::a_Normal),
         mem::size_of::<Vertex>(),
     );
-    let tangent = gpu::Accessor::new(
-        vertex_buffer.clone(),
-        Format::Signed { bits: 8, size: 4, norm: true },
-        offset_of!(Vertex, a_Tangent),
+    let tangents = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::I8Norm(4),
+        offset_of!(Vertex::a_Tangent),
         mem::size_of::<Vertex>(),
     );
     let joint_indices = gpu::Accessor::new(
-        vertex_buffer.clone(),
-        Format::Unsigned { bits: 32, size: 4, norm: false },
-        offset_of!(Vertex, a_JointIndices),
+        vbuf.clone(),
+        Format::U16(4),
+        offset_of!(Vertex::a_JointIndices),
         mem::size_of::<Vertex>(),
     );
     let joint_weights = gpu::Accessor::new(
-        vertex_buffer.clone(),
-        Format::Float { bits: 32, size: 4 },
-        offset_of!(Vertex, a_JointWeights),
+        vbuf.clone(),
+        Format::F32(4),
+        offset_of!(Vertex::a_JointWeights),
         mem::size_of::<Vertex>(),
     );
-    let index_buffer = indices.map(|slice| {
+
+    let indices = indices.map(|slice| {
         let buffer = factory.buffer(buf::Kind::Index, buf::Usage::StaticDraw);
         factory.initialize_buffer(&buffer, slice);
-        buffer
+        gpu::Accessor::new(buffer, Format::U32(1), 0, 0)
     });
-
-    let mut builder = gpu::VertexArray::builder();
-    builder.attribute(0, position);
-    builder.attribute(1, tex_coord);
-    builder.attribute(2, normal);
-    builder.attribute(3, tangent);
-    builder.attribute(4, joint_indices);
-    builder.attribute(5, joint_weights);
-    {
-        if let Some(buf) = index_buffer {
-            builder.indices(
-                gpu::Accessor::new(
-                    buf,
-                    Format::Unsigned { bits: 32, norm: false, size: 1 },
-                    0,
-                    mem::size_of::<u32>(),
-                )
-            );  
-        }
-    }
-
-    factory.vertex_array(builder)
+    let attributes = [
+        Some(positions),
+        Some(normals),
+        Some(tex_coords),
+        Some(tangents),
+        Some(joint_indices),
+        Some(joint_weights),
+        None,
+        None,
+    ];
+    factory.vertex_array(attributes, indices)
 }
 
 /// Enables/disables weight contributions to vertex inputs.
@@ -260,23 +229,22 @@ pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGE
     DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
 ];
 
+/// Pipelines available to the renderer.
 struct Pipelines {
-    solid: pipelines::Forward,
-    wireframe: pipelines::Forward,
+    basic: pipeline::Basic,
 }
 
 /// Three renderer.
 pub struct Renderer {
-    factory: Factory,
+    factory: gpu::Factory,
     pipelines: Pipelines,
 }
 
 impl Renderer {
     /// Constructor.
-    pub fn new(factory: Factory) -> Self {
+    pub fn new(factory: gpu::Factory) -> Self {
         let pipelines = Pipelines {
-            solid: pipelines::forward::solid(&factory),
-            wireframe: pipelines::forward::wireframe(&factory),
+            basic: pipeline::Basic::new(&factory),
         };
         Self {
             factory,
@@ -285,13 +253,14 @@ impl Renderer {
     }
 
     /// Render everything in the scene as viewed by the given camera.
-    pub fn render<T: AsRef<::Framebuffer>>(
+    pub fn render<T: AsRef<Framebuffer>>(
         &mut self,
         scene: &Scene,
         camera: &Camera,
         framebuffer: &T,
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
+        let framebuffer = framebuffer.as_ref();
 
         hub.process_messages();
         hub.update_graph(scene);
@@ -308,9 +277,7 @@ impl Renderer {
             (mx_projection * mx_view).into()
         };
 
-        self.factory.clear_color_buffer(0.0, 0.0, 0.0, 0.0);
-        self.factory.clear_depth_buffer();
-
+        self.factory.clear(framebuffer, pipeline::basic::CLEAR_OP);
         for node in hub.nodes.iter_mut() {
             if !node.visible {
                 continue;
@@ -319,14 +286,15 @@ impl Renderer {
                 let mx_world: [[f32; 4]; 4] =
                     ::cgmath::Matrix4::from(node.world_transform.clone())
                     .into();
-                let pipe = match data.material {
+                let pipe = &self.pipelines.basic;
+                let mut state = match data.material {
                     Material::Wireframe(_) | Material::Line(_) => {
-                        &self.pipelines.wireframe
+                        pipe.states.wireframe.clone()
                     },
-                    _ => &self.pipelines.solid,
+                    _ => pipe.states.solid.clone(),
                 };
                 let invocation = {
-                    use self::pipelines::forward::{LOCALS, Locals, GLOBALS, Globals};
+                    use self::pipeline::basic::{Locals, Globals};
                     let locals = Locals {
                         u_Color: [1.0, 1.0, 0.0, 0.0],
                         u_World: mx_world,
@@ -348,16 +316,16 @@ impl Renderer {
                         ),
                         &[globals],
                     );
-                    let mut invocation = gpu::program::Invocation {
+                    gpu::program::Invocation {
                         program: &pipe.program,
-                        uniforms: gpu::ArrayVec::new(),
-                        samplers: gpu::ArrayVec::new(),
-                    };
-                    invocation.uniforms
-                        .push((LOCALS.index, &pipe.locals));
-                    invocation.uniforms
-                        .push((GLOBALS.index, &pipe.globals));
-                    invocation
+                        uniforms: [
+                            Some(&pipe.locals),
+                            Some(&pipe.globals),
+                            None,
+                            None,
+                        ],
+                        samplers: [None; 4],
+                    }
                 };
                 /*
                 let invocation = match data.material {
@@ -393,14 +361,14 @@ impl Renderer {
                 };
                 */
                 let draw_call = gpu::DrawCall {
-                    primitive: gpu::Primitive::Triangles,
-                    mode: data.mode,
+                    primitive: gpu::draw_call::Primitive::Triangles,
+                    kind: data.kind,
                     offset: data.range.start,
                     count: data.range.end - data.range.start,
                 };
                 self.factory.draw(
-                    framebuffer.as_ref(),
-                    &pipe.state,
+                    framebuffer,
+                    &state,
                     &data.vertex_array,
                     &draw_call,
                     &invocation,

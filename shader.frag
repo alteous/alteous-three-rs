@@ -9,5 +9,5 @@ in float v_Depth;
 
 void main()
 {
-    gl_FragColor = vec4(v_Depth, 0.0, 0.0, 0.0);
+    gl_FragColor = vec4(1.0, 1.0, 0.0, 0.0); // vec4(v_Depth, 0.0, 0.0, 0.0);
 }

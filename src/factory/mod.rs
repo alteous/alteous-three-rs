@@ -5,7 +5,6 @@ use std::{cmp, ops};
 use animation;
 use camera;
 use color;
-use gfx::format::I8Norm;
 use gpu;
 use hub;
 use mint;
@@ -22,6 +21,7 @@ use light::{Ambient, Directional, Hemisphere, Point};
 use material::Material;
 use mesh::Mesh;
 use object::Object;
+use render::I8Norm;
 use scene::Scene;
 use skeleton::Skeleton;
 //use text::{Font, Text, TextData};
@@ -154,16 +154,9 @@ pub(crate) fn f2i(x: f32) -> I8Norm {
 
 impl Factory {
     /// Constructor.
-    pub fn new<T: ::Context>(ctx: &T) -> (::Framebuffer, Self) {
-        let (framebuffer, backend) = gpu::init(|sym| ctx.query_proc_address(sym));
+    pub fn new(backend: gpu::Factory) -> Self {
         let hub = Hub::new();
-        (
-            framebuffer,
-            Factory {
-                backend,
-                hub,
-            },
-        )
+        Factory { backend, hub }
     }
 
     /// Create a duplicate mesh with a different material.
@@ -191,7 +184,7 @@ impl Factory {
         let material = material.into();
         let vertices = render::make_vertices(&geometry);
         let visual_data = if geometry.faces.is_empty() {
-            let mode = gpu::Mode::Arrays;
+            let kind = gpu::draw_call::Kind::Arrays;
             let range = 0 .. vertices.len();
             let vertex_array = render::make_vertex_array(
                 &self.backend,
@@ -202,13 +195,13 @@ impl Factory {
             hub::VisualData {
                 material,
                 skeleton,
-                mode,
+                kind,
                 range,
                 vertex_array,
             }
         } else {
             let indices = geometry.faces.as_slice();
-            let mode = gpu::Mode::Elements;
+            let kind = gpu::draw_call::Kind::Elements;
             let range = 0 .. 3 * indices.len();
             let vertex_array = render::make_vertex_array(
                 &self.backend,
@@ -219,7 +212,7 @@ impl Factory {
             hub::VisualData {
                 material,
                 skeleton,
-                mode,
+                kind,
                 range,
                 vertex_array,
             }

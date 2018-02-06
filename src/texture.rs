@@ -1,6 +1,13 @@
+use gpu;
+use mint;
+
 use std::path::Path;
 
-use mint;
+/// Texture sampling magnification/minification filter.
+pub type Filter = gpu::sampler::Filter;
+
+/// Texture co-ordinate wrapping mode.
+pub type Wrap = gpu::sampler::Wrap;
 
 /// The sampling properties for a `Texture`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -8,15 +15,17 @@ pub struct Sampler;
 
 /// An image applied (mapped) to the surface of a shape or polygon.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Texture { 
+pub struct Texture {
+    inner: gpu::Texture2,
     total_size: [u32; 2],
     tex0: [f32; 2],
     tex1: [f32; 2],
 }
 
 impl Texture {
-    pub(crate) fn _new(total_size: [u32; 2]) -> Self {
+    pub(crate) fn new(inner: gpu::Texture2, total_size: [u32; 2]) -> Self {
         Texture {
+            inner,
             total_size,
             tex0: [0.0; 2],
             tex1: [total_size[0] as f32, total_size[1] as f32],

@@ -2,33 +2,43 @@
 
 use glutin;
 use glutin::{GlContext, GlWindow};
+use gpu;
 use mint;
 use render;
-use std::mem;
+use std::sync;
 
 use factory::Factory;
 use input::Input;
 use render::Renderer;
 use std::path::PathBuf;
-use std::os::raw::c_void;
 
 /// `Window` is the core entity of every `three-rs` application.
 ///
 /// It provides [user input](struct.Window.html#method.update),
 /// [`Factory`](struct.Factory.html) and [`Renderer`](struct.Renderer.html).
+#[derive(Clone)]
 pub struct Window {
-    window: glutin::GlWindow,
-    framebuffer: ::Framebuffer,
+    context: Context,
+    framebuffer: gpu::Framebuffer,
 }
 
-impl ::Context for Window {
-    fn query_proc_address(&self, symbol: &str) -> *const c_void {
-        self.window.get_proc_address(symbol) as *const c_void
+#[derive(Clone)]
+struct Context {
+    gl_win: sync::Arc<glutin::GlWindow>,
+}
+
+impl gpu::Context for Context {
+    fn query_proc_address(&self, symbol: &str) -> *const () {
+        self.gl_win.get_proc_address(symbol)
+    }
+
+    fn dimensions(&self) -> (u32, u32) {
+        self.gl_win.get_inner_size().expect("window is no longer alive")
     }
 }
 
-impl AsRef<::Framebuffer> for Window {
-    fn as_ref(&self) -> &::Framebuffer {
+impl AsRef<gpu::Framebuffer> for Window {
+    fn as_ref(&self) -> &gpu::Framebuffer {
         &self.framebuffer
     }
 }
@@ -144,17 +154,15 @@ impl Builder {
             try_override!(basic, gouraud, pbr, phong, quad, shadow, skybox, sprite,);
         }
 
-        let glx = GlWindow::new(builder, context, &events_loop).unwrap();
-        unsafe { glx.make_current().expect("GL context bind failed") };
-        let mut window = Window {
-            window: glx,
-            framebuffer: unsafe {
-                mem::uninitialized()
-            },
+        let context = {
+            let win = GlWindow::new(builder, context, &events_loop).unwrap();
+            unsafe { win.make_current().expect("GL context bind failed") };
+            Context { gl_win: sync::Arc::new(win) }
         };
-        let (framebuffer, factory) = Factory::new(&window);
-        window.framebuffer = framebuffer;
-        let renderer = Renderer::new(factory.clone());
+        let (framebuffer, backend) = gpu::init(context.clone());
+        let window = Window { context, framebuffer };
+        let factory = Factory::new(backend.clone());
+        let renderer = Renderer::new(backend);
         let input = Input::new(events_loop);
         (window, input, renderer, factory)
     }
@@ -164,7 +172,7 @@ impl Window {
     /// Create a new window with default parameters.
     pub fn new<T: Into<String>>(title: T) -> (Self, Input, Renderer, Factory) {
         Self::builder(title).build()
-    }
+     }
 
     /// Create new `Builder` with standard parameters.
     pub fn builder<T: Into<String>>(title: T) -> Builder {
@@ -180,12 +188,12 @@ impl Window {
 
     /// Presents the front buffer.
     pub fn swap_buffers(&mut self) {
-        self.window.swap_buffers().unwrap();
+        self.context.gl_win.swap_buffers().unwrap();
     }
 
     /// Get current window size in pixels.
     pub fn size(&self) -> mint::Vector2<f32> {
-        let size = self.window
+        let size = self.context.gl_win
             .get_inner_size()
             .expect("Can't get window size");
         [size.0 as f32, size.1 as f32].into()
@@ -197,9 +205,9 @@ impl Window {
         enable: bool,
     ) {
         let _ = if enable {
-            self.window.set_cursor_state(glutin::CursorState::Normal)
+            self.context.gl_win.set_cursor_state(glutin::CursorState::Normal)
         } else {
-            self.window.set_cursor_state(glutin::CursorState::Hide)
+            self.context.gl_win.set_cursor_state(glutin::CursorState::Hide)
         };
     }
 

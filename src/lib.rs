@@ -257,11 +257,11 @@ extern crate arrayvec;
 extern crate cgmath;
 extern crate froggy;
 extern crate genmesh;
-extern crate gfx;
-extern crate gfx_glyph;
 extern crate gltf;
 extern crate gltf_importer;
 extern crate gltf_utils;
+extern crate glutin;
+#[macro_use]
 extern crate gpu;
 extern crate image;
 extern crate includedir;
@@ -276,30 +276,14 @@ extern crate quick_error;
 extern crate rodio;
 extern crate vec_map;
 
-#[cfg(feature = "opengl")]
-extern crate gfx_device_gl;
-#[cfg(feature = "opengl")]
-extern crate gfx_window_glutin;
-#[cfg(feature = "opengl")]
-extern crate glutin;
-
 #[macro_use]
 mod macros;
-
-use std::os::raw::c_void;
-
-/// OpenGL context.
-pub trait Context {
-    /// Retrieve the corresponding function pointer for the given symbol.
-    fn query_proc_address(&self, symbol: &str) -> *const c_void;
-}
 
 pub mod audio;
 pub mod animation;
 pub mod camera;
 pub mod color;
 pub mod controls;
-pub mod custom;
 mod data;
 mod factory;
 pub mod geometry;
@@ -319,8 +303,9 @@ mod sprite;
 mod texture;
 mod util;
 
-#[cfg(feature = "opengl")]
 pub mod window;
+
+pub type Framebuffer = gpu::Framebuffer;
 
 #[doc(inline)]
 pub use color::Color;
@@ -337,7 +322,6 @@ pub use factory::{Factory, Gltf};
 #[doc(inline)]
 pub use geometry::Geometry;
 
-#[cfg(feature = "opengl")]
 #[doc(inline)]
 pub use glutin::VirtualKeyCode as Key;
 
@@ -371,10 +355,5 @@ pub use sprite::Sprite;
 // #[doc(inline)]
 // pub use texture::{CubeMap, CubeMapPath, FilterMethod, Sampler, Texture, WrapMode};
 
-#[cfg(feature = "opengl")]
-#[doc(inline)]
 pub use window::Window;
 
-pub use gpu::Framebuffer;
-pub use gpu::Texture2 as Texture;
-pub use gpu::texture::{Filter as FilterMethod, Wrap as WrapMode};

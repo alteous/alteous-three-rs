@@ -24,9 +24,9 @@ fn main() {
     let zrange = -1.0 .. 1.0;
     let camera = factory.orthographic_camera(center, yextent, zrange);
 
-    while !input.quit_requested() {
+    while !input.quit_requested() && !input.hit(three::KEY_ESCAPE) {
         input.update();
-        renderer.render(&scene, &camera);
+        renderer.render(&scene, &camera, &window);
         window.swap_buffers();
     }
 }
