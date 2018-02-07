@@ -1,11 +1,14 @@
 #version 150 core
-#include <locals>
+
+layout(std140) uniform b_Locals {
+    vec4 u_Color;
+    mat4 u_World;
+};
 
 in vec2 v_TexCoord;
-out vec4 Target0;
 
 uniform sampler2D t_Map;
 
 void main() {
-    Target0 = vec4(1.0, 1.0, 0.0, 0.0);//u_Color * texture(t_Map, v_TexCoord);
+    gl_FragColor = vec4(1.0, 1.0, 0.0, 0.0);//u_Color * texture(t_Map, v_TexCoord);
 }

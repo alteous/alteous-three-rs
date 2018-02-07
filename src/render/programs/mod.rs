@@ -1,11 +1,25 @@
 //! Rendering pipelines.
 
 pub mod basic;
+pub mod gouraud;
+pub mod phong;
+pub mod lambert;
 
 use gpu::{self, buffer as buf};
-use util::read_file_to_cstring;
+use render::Source;
 
 pub use self::basic::Basic;
+pub use self::gouraud::Gouraud;
+pub use self::phong::Phong;
+pub use self::lambert::Lambert;
+
+/// Built-in programs.
+pub struct Programs {
+    pub(crate) basic: Basic,
+    pub(crate) lambert: Lambert,
+    pub(crate) gouraud: Gouraud,
+    pub(crate) phong: Phong,
+}
 
 /// 4x4 identity matrix.
 pub const IDENTITY: [[f32; 4]; 4] = [
@@ -14,6 +28,16 @@ pub const IDENTITY: [[f32; 4]; 4] = [
     [0.0, 0.0, 1.0, 0.0],
     [0.0, 0.0, 0.0, 1.0],
 ];
+
+/// Create ALL the programs.
+pub fn init(factory: &gpu::Factory) -> Programs {
+    Programs {
+        basic: Basic::new(factory),
+        lambert: Lambert::new(factory),
+        gouraud: Gouraud::new(factory),
+        phong: Phong::new(factory),
+    }
+}
 
 /// Represents a uniform block in a program.
 ///
@@ -50,16 +74,15 @@ pub struct UniformBlockBinding<T: 'static + Clone> {
 /// Make a vertex shader + fragment shader program.
 pub fn make_program(
     factory: &gpu::Factory,
-    vertex_shader_path: &str,
-    fragment_shader_path: &str,
+    name: &str,
     bindings: &gpu::program::Bindings,
 ) -> gpu::Program {
     let vertex_shader = {
-        let mut source = read_file_to_cstring(vertex_shader_path).unwrap();
+        let source = Source::default(name, "vs").unwrap();
         factory.shader(gpu::shader::Kind::Vertex, &source)
     };
     let fragment_shader = {
-        let source = read_file_to_cstring(fragment_shader_path).unwrap();
+        let source = Source::default(name, "ps").unwrap();
         factory.shader(gpu::shader::Kind::Fragment, &source)
     };
     factory.program(&vertex_shader, &fragment_shader, bindings)

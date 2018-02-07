@@ -4,14 +4,15 @@ use mint;
 use std::path::Path;
 
 /// Texture sampling magnification/minification filter.
+#[allow(dead_code)]
 pub type Filter = gpu::sampler::Filter;
 
 /// Texture co-ordinate wrapping mode.
+#[allow(dead_code)]
 pub type Wrap = gpu::sampler::Wrap;
 
-/// The sampling properties for a `Texture`.
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Sampler;
+/// Sampling properties for a `Texture`.
+pub type Sampler = gpu::Sampler2;
 
 /// An image applied (mapped) to the surface of a shape or polygon.
 #[derive(Clone, Debug, PartialEq)]
@@ -20,6 +21,9 @@ pub struct Texture {
     total_size: [u32; 2],
     tex0: [f32; 2],
     tex1: [f32; 2],
+
+    /// Texture sampling properties.
+    pub sampler: Sampler,
 }
 
 impl Texture {
@@ -27,9 +31,15 @@ impl Texture {
         Texture {
             inner,
             total_size,
+            sampler: Default::default(),
             tex0: [0.0; 2],
             tex1: [total_size[0] as f32, total_size[1] as f32],
         }
+    }
+
+    /// Conversion into a program invocation parameter.
+    pub(crate) fn to_param<'a>(&'a self) -> (&'a gpu::Texture2, gpu::Sampler2) {
+        (&self.inner, self.sampler)
     }
 
     /// See [`Sprite::set_texel_range`](struct.Sprite.html#method.set_texel_range).
@@ -93,10 +103,10 @@ impl<P: AsRef<Path>> CubeMapPath<P> {
 /// Cubemap is six textures useful for
 /// [`Cubemapping`](https://en.wikipedia.org/wiki/Cube_mapping).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct CubeMap;
+pub struct Cube;
 
-impl CubeMap {
+impl Cube {
     pub(crate) fn _new() -> Self {
-        CubeMap
+        Cube
     }
 }

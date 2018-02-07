@@ -3,18 +3,18 @@
 use data;
 use util;
 
-use std::{io, ops, str};
+use std::{ffi, io, ops, str};
 use std::borrow::Borrow;
 use std::path::Path;
 
 /// Source code for a single GLSL shader.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Source(pub(crate) String);
+pub struct Source(pub(crate) ffi::CString);
 
 impl ops::Deref for Source {
-    type Target = [u8];
+    type Target = ffi::CStr;
     fn deref(&self) -> &Self::Target {
-        self.0.as_bytes()
+        &self.0
     }
 }
 
@@ -61,7 +61,7 @@ impl Source {
         let path = format!("data/shaders/{}_{}.glsl", name, suffix);
         let unprocessed = data::FILES.get(&path).unwrap();
         let processed = Self::preprocess("", str::from_utf8(unprocessed.borrow()).unwrap())?;
-        Ok(Source(processed))
+        Ok(Source(ffi::CString::new(processed).unwrap()))
     }
 
     /// Load the named shader from the given directory path.
@@ -74,7 +74,7 @@ impl Source {
         let path = root.as_ref().join(&base_name);
         let unprocessed = util::read_file_to_string(Path::new(&path))?;
         let processed = Self::preprocess(root, &unprocessed)?;
-        Ok(Source(processed))
+        Ok(Source(ffi::CString::new(processed).unwrap()))
     }
 }
 

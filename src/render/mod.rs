@@ -1,16 +1,21 @@
 //! The renderer.
 
+use color;
 use gpu;
+use gpu::{buffer as buf, framebuffer as fbuf};
 use glutin;
 use mint;
 use std::{iter, mem};
 
-pub mod pipeline;
+pub mod programs;
 pub mod source;
 
+use factory::f2i;
+use gpu::buffer::Format;
 use itertools::Either;
 use Framebuffer;
 
+use self::programs::Programs;
 pub use self::source::Source;
 
 /// Normalized signed 8-bit rational.
@@ -29,6 +34,11 @@ use scene::Scene;
 
 const NORMAL_Z: [I8Norm; 3] = [I8Norm(0), I8Norm(127), I8Norm(0)];
 const TANGENT_X: [I8Norm; 4] = [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(127)];
+const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
+    color: fbuf::ClearColor::Yes { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+    depth: fbuf::ClearDepth::Yes { z: 1.0 },
+};
+
 
 /// Default values for type `Vertex`.
 pub const DEFAULT_VERTEX: Vertex = Vertex {
@@ -71,10 +81,6 @@ pub struct Vertex {
     /// Weights of joint matrix contributions.
     pub a_JointWeights: [f32; 4],
 }
-
-use gpu::buffer::Format;
-
-use factory::f2i;
 
 /// Compiles a set of vertices from geometry.
 pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
@@ -136,8 +142,6 @@ pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
         })
         .collect()
 }
-
-use gpu::buffer as buf;
 
 /// Compiles a GPU vertex array from a set of vertex and index data.
 pub fn make_vertex_array(
@@ -229,26 +233,19 @@ pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGE
     DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
 ];
 
-/// Pipelines available to the renderer.
-struct Pipelines {
-    basic: pipeline::Basic,
-}
-
 /// Three renderer.
 pub struct Renderer {
-    factory: gpu::Factory,
-    pipelines: Pipelines,
+    backend: gpu::Factory,
+    programs: Programs,
 }
 
 impl Renderer {
     /// Constructor.
-    pub fn new(factory: gpu::Factory) -> Self {
-        let pipelines = Pipelines {
-            basic: pipeline::Basic::new(&factory),
-        };
+    pub fn new(backend: gpu::Factory) -> Self {
+        let programs = programs::init(&backend);
         Self {
-            factory,
-            pipelines,
+            backend,
+            programs,
         }
     }
 
@@ -277,7 +274,7 @@ impl Renderer {
             (mx_projection * mx_view).into()
         };
 
-        self.factory.clear(framebuffer, pipeline::basic::CLEAR_OP);
+        self.backend.clear(framebuffer, CLEAR_OP);
         for node in hub.nodes.iter_mut() {
             if !node.visible {
                 continue;
@@ -286,87 +283,87 @@ impl Renderer {
                 let mx_world: [[f32; 4]; 4] =
                     ::cgmath::Matrix4::from(node.world_transform.clone())
                     .into();
-                let pipe = &self.pipelines.basic;
-                let mut state = match data.material {
-                    Material::Wireframe(_) | Material::Line(_) => {
-                        pipe.states.wireframe.clone()
-                    },
-                    _ => pipe.states.solid.clone(),
-                };
-                let invocation = {
-                    use self::pipeline::basic::{Locals, Globals};
-                    let locals = Locals {
-                        u_Color: [1.0, 1.0, 0.0, 0.0],
-                        u_World: mx_world,
-                    };
-                    self.factory.overwrite_buffer(
-                        pipe.locals.slice(
-                            0,
-                            mem::size_of::<Locals>(),
-                        ),
-                        &[locals],
-                    );
-                    let globals = Globals {
-                        u_ViewProjection: mx_view_projection.clone(),
-                    };
-                    self.factory.overwrite_buffer(
-                        pipe.globals.slice(
-                            0,
-                            mem::size_of::<Globals>(),
-                        ),
-                        &[globals],
-                    );
-                    gpu::program::Invocation {
-                        program: &pipe.program,
-                        uniforms: [
-                            Some(&pipe.locals),
-                            Some(&pipe.globals),
-                            None,
-                            None,
-                        ],
-                        samplers: [None; 4],
-                    }
-                };
-                /*
-                let invocation = match data.material {
+                let (state, invocation, primitive);
+                match data.material {
                     Material::Basic(ref params) => {
-                        match data.pipeline {
-                            Pipeline::Solid => {
-                                let pipeline = &self.pipelines.solid;
-                                let c = color::to_linear_rgb(params.color);
-                                let locals = SolidLocals {
-                                    u_Color: [c[0], c[1], c[2], 0.0],
-                                };
-                                self.factory.overwrite_buffer(
-                                    pipeline.buffer.slice(0, mem::size_of::<SolidLocals>()),
-                                    &[locals],
-                                );
-                                let mut invocation = gpu::program::Invocation {
-                                    program: &pipeline.program,
-                                    uniforms: gpu::ArrayVec::new(),
-                                    samplers: gpu::ArrayVec::new(),
-                                };
-                                invocation.uniforms
-                                    .push(
-                                        (
-                                            pipeline.b_Locals,
-                                            &pipeline.buffer,
-                                        )
-                                    );
-                                invocation
-                            }
-                        }
-                    },
+                        primitive = gpu::Primitive::Triangles;
+                        state = gpu::State::default();
+                        invocation = self.programs.basic.invoke(
+                            &self.backend,
+                            mx_view_projection,
+                            mx_world,
+                            color::to_linear_rgba(params.color, 1.0),
+                            params.map.as_ref(),
+                        );
+                    }
+                    Material::Phong(ref params) => {
+                        primitive = gpu::Primitive::Triangles;
+                        state = gpu::State::default();
+                        invocation = self.programs.phong.invoke(
+                            &self.backend,
+                            mx_view_projection,
+                            mx_world,
+                            color::to_linear_rgba(params.color, 1.0),
+                        );
+                    }
+                    Material::Wireframe(ref params) => {
+                        primitive = gpu::Primitive::Triangles;
+                        state = gpu::State {
+                            culling: gpu::pipeline::Culling::None,
+                            polygon_mode: gpu::pipeline::PolygonMode::Line(1),
+                            .. Default::default()
+                        };
+                        invocation = self.programs.basic.invoke(
+                            &self.backend,
+                            mx_view_projection,
+                            mx_world,
+                            color::to_linear_rgba(params.color, 1.0),
+                            None,
+                        );
+                    } 
+                    Material::Line(ref params) => {
+                        primitive = gpu::Primitive::Lines;
+                        state = gpu::State {
+                            culling: gpu::pipeline::Culling::None,
+                            polygon_mode: gpu::pipeline::PolygonMode::Line(1),
+                            .. Default::default()
+                        };
+                        invocation = self.programs.basic.invoke(
+                            &self.backend,
+                            mx_view_projection,
+                            mx_world,
+                            color::to_linear_rgba(params.color, 1.0),
+                            None,
+                        );
+                    }
+                    Material::Lambert(ref params) => {
+                        primitive = gpu::Primitive::Triangles;
+                        state = gpu::State::default();
+                        invocation = if params.flat {
+                            self.programs.lambert.invoke(
+                                &self.backend,
+                                mx_view_projection,
+                                mx_world,
+                                color::to_linear_rgba(params.color, 1.0),
+                            )
+                        } else {
+                            self.programs.gouraud.invoke(
+                                &self.backend,
+                                mx_view_projection,
+                                mx_world,
+                                color::to_linear_rgba(params.color, 1.0),
+                            )
+                        };
+                    }
                     _ => unimplemented!(),
                 };
-                */
                 let draw_call = gpu::DrawCall {
-                    primitive: gpu::draw_call::Primitive::Triangles,
+                    primitive,
                     kind: data.kind,
                     offset: data.range.start,
                     count: data.range.end - data.range.start,
                 };
-                self.factory.draw(
+                self.backend.draw(
                     framebuffer,
                     &state,
                     &data.vertex_array,

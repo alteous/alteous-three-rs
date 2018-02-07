@@ -1,6 +1,10 @@
 #version 150 core
-#include <locals>
 #include <globals>
+
+layout(std140) uniform b_Locals {
+    vec4 u_Color;
+    mat4 u_World;
+};
 
 in vec4 a_Position;
 in vec4 a_Normal;

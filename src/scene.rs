@@ -1,13 +1,13 @@
 //! `Scene` and `SyncGuard` structures.
 
 use hub;
+use std::mem;
+use texture;
 
 use color::Color;
 use node::NodePointer;
 use object::Object;
-use texture::{CubeMap, Texture};
-
-use std::mem;
+use texture::Texture;
 
 /// Background type.
 #[derive(Clone, Debug, PartialEq)]
@@ -18,7 +18,7 @@ pub enum Background {
     // TODO: different wrap modes?
     Texture(Texture),
     /// Skybox
-    Skybox(CubeMap),
+    Skybox(texture::Cube),
 }
 
 /// The root node of a tree of game objects that may be rendered by a [`Camera`].

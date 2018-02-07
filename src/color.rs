@@ -48,6 +48,12 @@ pub fn to_linear_rgb(c: Color) -> [f32; 3] {
     [f(c >> 16), f(c >> 8), f(c)]
 }
 
+/// sRGB to linear conversion with an explicit alpha value.
+pub fn to_linear_rgba(c: Color, a: f32) -> [f32; 4] {
+    let rgb = to_linear_rgb(c);
+    [rgb[0], rgb[1], rgb[2], a]
+}
+
 /// Linear to sRGB conversion.
 ///
 /// Implementation taken from https://en.wikipedia.org/wiki/SRGB

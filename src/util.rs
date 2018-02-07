@@ -1,5 +1,7 @@
 //! Internal utility functions.
 
+#![allow(dead_code)]
+
 use std::{ffi, fs, io, path};
 use std::io::Read;
 

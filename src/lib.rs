@@ -305,6 +305,7 @@ mod util;
 
 pub mod window;
 
+/// Render target.
 pub type Framebuffer = gpu::Framebuffer;
 
 #[doc(inline)]

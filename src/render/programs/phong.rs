@@ -1,8 +1,6 @@
-//! Basic rendering pipeline.
-//!
-//! Useful for rendering meshes with a solid color or rendering mesh wireframes.
+//! Phong rendering pipeline.
 
-use gpu::{self, framebuffer as fbuf, pipeline as pipe, program};
+use gpu::{self, framebuffer as fbuf, program};
 use super::*;
 
 /// Basic pipeline bindings.
@@ -41,9 +39,6 @@ pub const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
     depth: fbuf::ClearDepth::Yes { z: 1.0 },
 };
 
-/// State transition for the wireframe pipeline.
-pub const WIREFRAME: pipe::State = pipe::DEFAULT_STATE;
-
 /// Per-world variables.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
@@ -65,19 +60,9 @@ pub struct Locals {
     pub u_Color: [f32; 4],
 }
 
-/// Pipeline states for the basic rendering pipeline.
-#[derive(Clone, Debug)]
-pub struct States {
-    /// Render as a solid.
-    pub solid: gpu::State,
-
-    /// Render as a wireframe.
-    pub wireframe: gpu::State,
-}
-
 /// Basic rendering pipeline.
-pub struct Basic {
-    /// Linked program.
+pub struct Phong {
+    /// The program.
     pub program: gpu::Program,
 
     /// Locals uniform buffer.
@@ -85,30 +70,56 @@ pub struct Basic {
 
     /// Globals uniform buffer.
     pub globals: gpu::Buffer,
-
-    /// Pipeline states.
-    pub states: States,
 }
 
-impl Basic {
-    /// Creates a solid rendering pipeline.
+impl Phong {
+    /// Creates the basic rendering pipelines.
     pub fn new(factory: &gpu::Factory) -> Self {
-        let program = make_program(factory, "shader.vert", "shader.frag", &BINDINGS);
         let locals = make_uniform_buffer(factory, &LOCALS);
         let globals = make_uniform_buffer(factory, &GLOBALS);
-        let states = States {
-            solid: gpu::State::default(),
-            wireframe: gpu::State {
-                culling: gpu::pipeline::Culling::None,
-                polygon_mode: gpu::pipeline::PolygonMode::Line(1),
-                .. Default::default()
-            },
-        };
-        Basic {
-            program,
-            states,
-            locals,
-            globals,
+        let program = make_program(factory, "phong", &BINDINGS);
+        Phong { program, locals, globals }
+    }
+
+    /// Create an invocation of the basic program.
+    pub fn invoke(
+        &self,
+        backend: &gpu::Factory,
+        mx_view_projection: [[f32; 4]; 4],
+        mx_world: [[f32; 4]; 4],
+        color: [f32; 4],
+    ) -> gpu::Invocation {
+        backend.overwrite_buffer(
+            self.locals.as_slice(),
+            &[
+                Locals {
+                    u_World: mx_world,
+                    u_Color: color,
+                },
+            ],
+        );
+        backend.overwrite_buffer(
+            self.globals.as_slice(),
+            &[
+                Globals {
+                    u_ViewProjection: mx_view_projection,
+                },
+            ],
+        );
+        gpu::Invocation {
+            program: &self.program,
+            uniforms: [
+                Some(&self.locals),
+                Some(&self.globals),
+                None,
+                None,
+            ],
+            samplers: [
+                None,
+                None,
+                None,
+                None,
+            ],
         }
     }
 }
