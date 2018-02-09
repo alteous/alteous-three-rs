@@ -8,7 +8,7 @@ use super::*;
 use texture::Texture;
 
 /// Basic pipeline bindings.
-pub const BINDINGS: program::Bindings = program::Bindings {
+const BINDINGS: program::Bindings = program::Bindings {
     uniform_blocks: [
         program::UniformBlockBinding::Required(b"b_Locals\0"),
         program::UniformBlockBinding::Required(b"b_Globals\0"),
@@ -19,7 +19,7 @@ pub const BINDINGS: program::Bindings = program::Bindings {
 };
 
 /// Locals uniform block binding.
-pub const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
+const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
     name: b"b_Locals\0",
     index: 0,
     init: Locals {
@@ -29,11 +29,14 @@ pub const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
 };
 
 /// Globals uniform block binding.
-pub const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
+const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
     name: b"b_Globals\0",
     index: 1,
     init: Globals {
         u_ViewProjection: IDENTITY,
+        u_InverseProjection: IDENTITY,
+        u_View: IDENTITY,
+        u_NumLights: 0,
     },
 };
 
@@ -41,33 +44,42 @@ pub const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct Globals {
+struct Globals {
     /// Combined world-to-view and view-to-projection matrix.
-    pub u_ViewProjection: [[f32; 4]; 4],
+    u_ViewProjection: [[f32; 4]; 4],
+
+    /// Inverse of view-to-projection matrix.
+    u_InverseProjection: [[f32; 4]; 4],
+
+    /// World-to-view matrix.
+    u_View: [[f32; 4]; 4],
+
+    /// Number of lights to apply to the rendered object.
+    u_NumLights: u32,
 }
 
 /// Per-instance variables.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
 #[repr(C)]
-pub struct Locals {
+struct Locals {
     /// Model-to-world matrix.
-    pub u_World: [[f32; 4]; 4],
+    u_World: [[f32; 4]; 4],
 
     /// Solid rendering color.
-    pub u_Color: [f32; 4],
+    u_Color: [f32; 4],
 }
 
 /// Basic rendering pipeline.
 pub struct Basic {
     /// The program.
-    pub program: gpu::Program,
+    program: gpu::Program,
 
     /// Locals uniform buffer.
-    pub locals: gpu::Buffer,
+    locals: gpu::Buffer,
 
     /// Globals uniform buffer.
-    pub globals: gpu::Buffer,
+    globals: gpu::Buffer,
 }
 
 impl Basic {
@@ -94,6 +106,7 @@ impl Basic {
             &[
                 Globals {
                     u_ViewProjection: mx_view_projection,
+                    .. GLOBALS.init
                 },
             ],
         );

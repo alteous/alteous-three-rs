@@ -3,8 +3,6 @@
 use color;
 use gpu;
 use gpu::{buffer as buf, framebuffer as fbuf};
-use glutin;
-use mint;
 use std::{iter, mem};
 
 pub mod programs;
@@ -39,7 +37,6 @@ const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
     depth: fbuf::ClearDepth::Yes { z: 1.0 },
 };
 
-
 /// Default values for type `Vertex`.
 pub const DEFAULT_VERTEX: Vertex = Vertex {
     a_Position: [0.0, 0.0, 0.0, 1.0],
@@ -49,6 +46,27 @@ pub const DEFAULT_VERTEX: Vertex = Vertex {
     a_JointIndices: [0, 0, 0, 0],
     a_JointWeights: [1.0, 1.0, 1.0, 1.0],
 };
+
+/// Vertex attribute location for GLSL programs.
+pub type AttributeLocation = usize;
+
+/// Position attribute location.
+pub const POSITION: AttributeLocation = 0;
+
+/// Texture co-ordinate attribute location.
+pub const TEX_COORD0: AttributeLocation = 1;
+
+/// Normal attribute location.
+pub const NORMAL: AttributeLocation = 2;
+
+/// Tangent attribute location.
+pub const TANGENT: AttributeLocation = 3;
+
+/// Joint indices attribute location.
+pub const JOINT_INDICES: AttributeLocation = 4;
+
+/// Joint weights attribute location.
+pub const JOINT_WEIGHTS: AttributeLocation = 5;
 
 impl Default for Vertex {
     fn default() -> Self {
@@ -149,12 +167,12 @@ pub fn make_vertex_array(
     indices: Option<&[[u32; 3]]>,
     vertices: &[Vertex],
 ) -> gpu::VertexArray {
-    let vbuf = factory.buffer(buf::Kind::Array, buf::Usage::StaticDraw);
-    factory.initialize_buffer(&vbuf, vertices);
+    let mut vbuf = factory.buffer(buf::Kind::Array, buf::Usage::StaticDraw);
+    factory.initialize_buffer(&mut vbuf, vertices);
 
     let positions = gpu::Accessor::new(
         vbuf.clone(),
-        Format::F32(3),
+        Format::F32(4),
         offset_of!(Vertex::a_Position),
         mem::size_of::<Vertex>(),
     );
@@ -190,20 +208,18 @@ pub fn make_vertex_array(
     );
 
     let indices = indices.map(|slice| {
-        let buffer = factory.buffer(buf::Kind::Index, buf::Usage::StaticDraw);
-        factory.initialize_buffer(&buffer, slice);
+        let mut buffer = factory.buffer(buf::Kind::Index, buf::Usage::StaticDraw);
+        factory.initialize_buffer(&mut buffer, slice);
         gpu::Accessor::new(buffer, Format::U32(1), 0, 0)
     });
-    let attributes = [
-        Some(positions),
-        Some(normals),
-        Some(tex_coords),
-        Some(tangents),
-        Some(joint_indices),
-        Some(joint_weights),
-        None,
-        None,
-    ];
+    let mut attributes = [None, None, None, None, None, None, None, None];
+    attributes[POSITION] = Some(positions);
+    attributes[NORMAL] = Some(normals);
+    attributes[TEX_COORD0] = Some(tex_coords);
+    attributes[TANGENT] = Some(tangents);
+    attributes[JOINT_INDICES] = Some(joint_indices);
+    attributes[JOINT_WEIGHTS] = Some(joint_weights);
+
     factory.vertex_array(attributes, indices)
 }
 
@@ -257,14 +273,15 @@ impl Renderer {
         framebuffer: &T,
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
+        let mut render_nodes = Vec::new();
         let framebuffer = framebuffer.as_ref();
 
         hub.process_messages();
-        hub.update_graph(scene);
+        hub.update_graph(scene, &mut render_nodes);
         let mx_view = {
             use ::cgmath::Transform;
             let node = &hub[camera];
-            let inv_transform = node.world_transform
+            let inv_transform = node.transform//node.world_transform
                 .inverse_transform()
                 .unwrap();
             ::cgmath::Matrix4::from(inv_transform)
@@ -275,132 +292,103 @@ impl Renderer {
         };
 
         self.backend.clear(framebuffer, CLEAR_OP);
-        for node in hub.nodes.iter_mut() {
-            if !node.visible {
-                continue;
-            }
-            if let SubNode::Visual(ref data) = node.sub_node {
-                let mx_world: [[f32; 4]; 4] =
-                    ::cgmath::Matrix4::from(node.world_transform.clone())
-                    .into();
-                let (state, invocation, primitive);
-                match data.material {
-                    Material::Basic(ref params) => {
-                        primitive = gpu::Primitive::Triangles;
-                        state = gpu::State::default();
-                        invocation = self.programs.basic.invoke(
+        for ptr in &render_nodes {
+            let node = &hub.nodes[ptr];
+            let data = match node.sub_node {
+                SubNode::Visual(ref data) => data,
+                _ => unreachable!(),
+            };
+            let mx_world: [[f32; 4]; 4] =
+                ::cgmath::Matrix4::from(node.world_transform.clone())
+                .into();
+            let (state, invocation, primitive);
+            match data.material {
+                Material::Basic(ref params) => {
+                    primitive = gpu::Primitive::Triangles;
+                    state = gpu::State::default();
+                    invocation = self.programs.basic.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        color::to_linear_rgba(params.color, 1.0),
+                        params.map.as_ref(),
+                    );
+                }
+                Material::Phong(ref params) => {
+                    primitive = gpu::Primitive::Triangles;
+                    state = gpu::State::default();
+                    invocation = self.programs.phong.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        color::to_linear_rgba(params.color, 1.0),
+                    );
+                }
+                Material::Wireframe(ref params) => {
+                    primitive = gpu::Primitive::Triangles;
+                    state = gpu::State {
+                        culling: gpu::pipeline::Culling::None,
+                        polygon_mode: gpu::pipeline::PolygonMode::Line(1),
+                        .. Default::default()
+                    };
+                    invocation = self.programs.basic.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        color::to_linear_rgba(params.color, 1.0),
+                        None,
+                    );
+                } 
+                Material::Line(ref params) => {
+                    primitive = gpu::Primitive::Lines;
+                    state = gpu::State {
+                        culling: gpu::pipeline::Culling::None,
+                        polygon_mode: gpu::pipeline::PolygonMode::Line(1),
+                        .. Default::default()
+                    };
+                    invocation = self.programs.basic.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        color::to_linear_rgba(params.color, 1.0),
+                        None,
+                    );
+                }
+                Material::Lambert(ref params) => {
+                    primitive = gpu::Primitive::Triangles;
+                    state = gpu::State::default();
+                    invocation = if params.flat {
+                        self.programs.lambert.invoke(
                             &self.backend,
                             mx_view_projection,
                             mx_world,
                             color::to_linear_rgba(params.color, 1.0),
-                            params.map.as_ref(),
-                        );
-                    }
-                    Material::Phong(ref params) => {
-                        primitive = gpu::Primitive::Triangles;
-                        state = gpu::State::default();
-                        invocation = self.programs.phong.invoke(
+                        )
+                    } else {
+                        self.programs.gouraud.invoke(
                             &self.backend,
                             mx_view_projection,
                             mx_world,
                             color::to_linear_rgba(params.color, 1.0),
-                        );
-                    }
-                    Material::Wireframe(ref params) => {
-                        primitive = gpu::Primitive::Triangles;
-                        state = gpu::State {
-                            culling: gpu::pipeline::Culling::None,
-                            polygon_mode: gpu::pipeline::PolygonMode::Line(1),
-                            .. Default::default()
-                        };
-                        invocation = self.programs.basic.invoke(
-                            &self.backend,
-                            mx_view_projection,
-                            mx_world,
-                            color::to_linear_rgba(params.color, 1.0),
-                            None,
-                        );
-                    } 
-                    Material::Line(ref params) => {
-                        primitive = gpu::Primitive::Lines;
-                        state = gpu::State {
-                            culling: gpu::pipeline::Culling::None,
-                            polygon_mode: gpu::pipeline::PolygonMode::Line(1),
-                            .. Default::default()
-                        };
-                        invocation = self.programs.basic.invoke(
-                            &self.backend,
-                            mx_view_projection,
-                            mx_world,
-                            color::to_linear_rgba(params.color, 1.0),
-                            None,
-                        );
-                    }
-                    Material::Lambert(ref params) => {
-                        primitive = gpu::Primitive::Triangles;
-                        state = gpu::State::default();
-                        invocation = if params.flat {
-                            self.programs.lambert.invoke(
-                                &self.backend,
-                                mx_view_projection,
-                                mx_world,
-                                color::to_linear_rgba(params.color, 1.0),
-                            )
-                        } else {
-                            self.programs.gouraud.invoke(
-                                &self.backend,
-                                mx_view_projection,
-                                mx_world,
-                                color::to_linear_rgba(params.color, 1.0),
-                            )
-                        };
-                    }
-                    _ => unimplemented!(),
-                };
-                let draw_call = gpu::DrawCall {
-                    primitive,
-                    kind: data.kind,
-                    offset: data.range.start,
-                    count: data.range.end - data.range.start,
-                };
-                self.backend.draw(
-                    framebuffer,
-                    &state,
-                    &data.vertex_array,
-                    &draw_call,
-                    &invocation,
-                );
-            }
+                        )
+                    };
+                }
+                _ => unimplemented!(),
+            };
+            let draw_call = gpu::DrawCall {
+                primitive,
+                kind: data.kind,
+                offset: data.range.start,
+                count: data.range.end - data.range.start,
+            };
+            self.backend.draw(
+                framebuffer,
+                &state,
+                &data.vertex_array,
+                &draw_call,
+                &invocation,
+            );
         }
-    }
-
-    pub(crate) fn _resize(
-        &mut self,
-        _window: &glutin::GlWindow,
-    ) {
-        println!("resize");
-    }
-
-    /// Returns current viewport aspect ratio, i.e. width / height.
-    pub fn aspect_ratio(&self) -> f32 {
-        1.0 // self.size.0 as f32 / self.size.1 as f32
-    }
-
-    /// Map screen pixel coordinates to Normalized Display Coordinates.
-    /// The lower left corner corresponds to (-1,-1), and the upper right corner
-    /// corresponds to (1,1).
-    pub fn map_to_ndc<P: Into<mint::Point2<f32>>>(
-        &self,
-        _point: P,
-    ) -> mint::Point2<f32> {
-        /*
-        let point = point.into();
-        mint::Point2 {
-            x: 2.0 * point.x / self.size.0 as f32 - 1.0,
-            y: 1.0 - 2.0 * point.y / self.size.1 as f32,
-        }
-         */
-        mint::Point2 { x: 0.0, y: 0.0 }
     }
 }
 

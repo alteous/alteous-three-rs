@@ -1,8 +1,9 @@
+extern crate env_logger;
 extern crate three;
 
 fn main() {
-    let (mut window, mut input, mut renderer, mut factory) =
-        three::Window::new("Getting started with three-rs");
+    let _ = env_logger::init();
+    let (mut window, mut input, mut renderer, mut factory) = three::init();
 
     let mut scene = factory.scene();
     let vertices = vec![

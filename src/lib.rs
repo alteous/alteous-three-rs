@@ -333,7 +333,7 @@ pub use group::Group;
 pub use material::Material;
 
 #[doc(inline)]
-pub use mesh::{DynamicMesh, Mesh};
+pub use mesh::Mesh;
 
 #[doc(inline)]
 pub use node::{Node, Transform};
@@ -353,8 +353,16 @@ pub use sprite::Sprite;
 // #[doc(inline)]
 // pub use text::{Align, Font, Layout, Text};
 
-// #[doc(inline)]
-// pub use texture::{CubeMap, CubeMapPath, FilterMethod, Sampler, Texture, WrapMode};
+#[doc(inline)]
+pub use texture::Texture;
 
+#[doc(inline)]
 pub use window::Window;
 
+/// Convenience method for initializing the crate with a default platform
+/// window.
+pub fn init() -> (Window, Input, Renderer, Factory) {
+    // TODO: Fix this so that each struct is created independently in a
+    // sensible way.
+    Window::new("three-rs")
+}

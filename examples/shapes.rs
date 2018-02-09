@@ -6,8 +6,7 @@ use cgmath::prelude::*;
 use three::Object;
 
 fn main() {
-    let (mut window, mut input, mut renderer, mut factory) =
-        three::Window::new("Getting started with three-rs");
+    let (mut window, mut input, mut renderer, mut factory) = three::init();
 
     let mut scene = factory.scene();
     let camera = factory.perspective_camera(75.0, 1.0 .. 50.0);

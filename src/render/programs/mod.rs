@@ -93,7 +93,7 @@ pub fn make_uniform_buffer<T: 'static + Clone>(
     factory: &gpu::Factory,
     binding: &UniformBlockBinding<T>,
 ) -> gpu::Buffer {
-    let buffer = factory.buffer(buf::Kind::Uniform, buf::Usage::DynamicDraw);
-    factory.initialize_buffer(&buffer, &[binding.init.clone()]);
+    let mut buffer = factory.buffer(buf::Kind::Uniform, buf::Usage::DynamicDraw);
+    factory.initialize_buffer(&mut buffer, &[binding.init.clone()]);
     buffer
 }
