@@ -1,12 +1,14 @@
 //mod load_gltf;
+mod load_texture;
 
-use std::{cmp, ops};
+use std::{cmp, collections, ops};
 
 use animation;
 use camera;
 use color;
 use gpu;
 use hub;
+use material;
 use mint;
 use object;
 use render;
@@ -24,6 +26,8 @@ use object::Object;
 use render::I8Norm;
 use scene::Scene;
 use skeleton::Skeleton;
+use sprite::Sprite;
+use texture::Texture;
 //use text::{Font, Text, TextData};
 //use texture::{CubeMap, CubeMapPath, FilterMethod, Sampler, Texture, WrapMode};
 use vec_map::VecMap;
@@ -74,11 +78,14 @@ const QUAD: [Vertex; 4] = [
 pub type MapVertices<'a> = gfx::mapping::Writer<'a, BackendResources, Vertex>;
 */
 
+type TextureCache = collections::HashMap<String, Texture>;
+
 /// `Factory` is used to instantiate game objects.
 #[derive(Clone)]
 pub struct Factory {
     backend: gpu::Factory,
     hub: hub::Pointer,
+    texture_cache: TextureCache,
 }
 
 /*
@@ -156,7 +163,8 @@ impl Factory {
     /// Constructor.
     pub fn new(backend: gpu::Factory) -> Self {
         let hub = Hub::new();
-        Factory { backend, hub }
+        let texture_cache = Default::default();
+        Factory { backend, hub, texture_cache }
     }
 
     /// Create a duplicate mesh with a different material.
@@ -346,14 +354,59 @@ impl Factory {
             shadow: None,
         }))
     }
+
+    /// Create new `Sprite`.
+    pub fn sprite(
+        &mut self,
+        map: Texture,
+    ) -> Sprite {
+        let material = material::Sprite { map }.into();
+        let geometry = Geometry {
+            vertices: vec![
+                [-0.5, -0.5, 0.0].into(),
+                [0.5, -0.5, 0.0].into(),
+                [-0.5, 0.5, 0.0].into(),
+                [0.5, 0.5, 0.0].into(),
+            ],
+            tex_coords: vec![
+                [0.0, 0.0].into(),
+                [1.0, 0.0].into(),
+                [0.0, 1.0].into(),
+                [1.0, 1.0].into(),
+            ],
+            .. Default::default()
+        };
+        let vertices = render::make_vertices(&geometry);
+        let visual_data = {
+            let kind = gpu::draw_call::Kind::Arrays;
+            let range = 0 .. vertices.len();
+            let vertex_array = render::make_vertex_array(
+                &self.backend,
+                None,
+                &vertices,
+            );
+            let skeleton = None;
+            hub::VisualData {
+                material,
+                skeleton,
+                kind,
+                range,
+                vertex_array,
+            }
+        };
+        let object = self.hub.lock().unwrap().spawn_visual(visual_data);
+        Sprite::new(object)
+    }
 }
 
+/*
 impl ops::Deref for Factory {
     type Target = gpu::Factory;
     fn deref(&self) -> &Self::Target {
         &self.backend
     }
 }
+*/
 
 /********
 impl OldFactory {

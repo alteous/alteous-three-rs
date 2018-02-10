@@ -132,5 +132,4 @@ decl_shaders! {
     (quad, quad, Quad),
     (shadow, shadow, Shadow),
     (skybox, skybox, Skybox),
-    (sprite, sprite, Sprite),
 }

@@ -151,7 +151,7 @@ impl Builder {
                     $( try_override!($name); )*
                 };
             }
-            try_override!(basic, gouraud, pbr, phong, quad, shadow, skybox, sprite,);
+            try_override!(basic, gouraud, pbr, phong, quad, shadow, skybox,);
         }
 
         let context = {

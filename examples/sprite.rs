@@ -44,18 +44,18 @@ impl Animator {
 }
 
 fn main() {
-    let mut win = three::Window::new("Three-rs sprite example");
-    let cam = win.factory
-        .orthographic_camera([0.0, 0.0], 10.0, -10.0 .. 10.0);
+    let (mut window, mut input, mut renderer, mut factory) = three::init();
+    let camera = factory.orthographic_camera([0.0, 0.0], 10.0, -10.0 .. 10.0);
 
-    let pikachu_path: String = format!("{}/test_data/pikachu_anim.png", env!("CARGO_MANIFEST_DIR"));
-    let pikachu_path_str: &str = pikachu_path.as_str();
-    let material = three::material::Sprite {
-        map: win.factory.load_texture(pikachu_path_str),
-    };
-    let mut sprite = win.factory.sprite(material);
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/test_data/pikachu_anim.png",
+    );
+    let map = factory.load_texture(path);
+    let sprite = factory.sprite(map);
+    let mut scene = factory.scene();
     sprite.set_scale(8.0);
-    sprite.set_parent(&win.scene);
+    scene.add(&sprite);
 
     let mut anim = Animator {
         cell_size: [96, 96],
@@ -63,27 +63,28 @@ fn main() {
         duration: 0.1,
         repeat: true,
         current: [0, 0],
-        timer: win.input.time(),
+        timer: input.time(),
         sprite,
     };
     anim.update_uv();
 
     // Specify background image. Remove `if` to enable.
     if false {
-        let background = win.factory.load_texture("test_data/texture.png");
-        win.scene.background = three::Background::Texture(background);
+        let background = factory.load_texture("test_data/texture.png");
+        scene.background = three::Background::Texture(background);
     }
 
-    while win.update() && !win.input.hit(three::KEY_ESCAPE) {
-        let row = win.input.delta(three::AXIS_LEFT_RIGHT).map(|mut diff| {
+    while !input.quit_requested() && !input.hit(three::KEY_ESCAPE) {
+        input.update();
+        let row = input.delta(three::AXIS_LEFT_RIGHT).map(|mut diff| {
             let total = anim.cell_counts[1] as i8;
             while diff < 0 {
                 diff += total
             }
             (anim.current[1] + diff as u16) % total as u16
         });
-        anim.update(row, &win.input);
-
-        win.render(&cam);
+        anim.update(row, &input);
+        renderer.render(&scene, &camera, &window);
+        window.swap_buffers();
     }
 }

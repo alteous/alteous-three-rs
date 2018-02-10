@@ -27,13 +27,13 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub(crate) fn new(inner: gpu::Texture2, total_size: [u32; 2]) -> Self {
+    pub(crate) fn new(inner: gpu::Texture2, width: u32, height: u32) -> Self {
         Texture {
             inner,
-            total_size,
+            total_size: [width, height],
             sampler: Default::default(),
             tex0: [0.0; 2],
-            tex1: [total_size[0] as f32, total_size[1] as f32],
+            tex1: [width as f32, height as f32],
         }
     }
 

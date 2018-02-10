@@ -2,22 +2,22 @@
 
 pub mod basic;
 pub mod gouraud;
-pub mod phong;
 pub mod lambert;
+pub mod phong;
 
 use gpu::{self, buffer as buf};
 use render::Source;
 
 pub use self::basic::Basic;
 pub use self::gouraud::Gouraud;
-pub use self::phong::Phong;
 pub use self::lambert::Lambert;
+pub use self::phong::Phong;
 
 /// Built-in programs.
 pub struct Programs {
     pub(crate) basic: Basic,
-    pub(crate) lambert: Lambert,
     pub(crate) gouraud: Gouraud,
+    pub(crate) lambert: Lambert,
     pub(crate) phong: Phong,
 }
 
@@ -33,8 +33,8 @@ pub const IDENTITY: [[f32; 4]; 4] = [
 pub fn init(factory: &gpu::Factory) -> Programs {
     Programs {
         basic: Basic::new(factory),
-        lambert: Lambert::new(factory),
         gouraud: Gouraud::new(factory),
+        lambert: Lambert::new(factory),
         phong: Phong::new(factory),
     }
 }

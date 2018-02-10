@@ -6,6 +6,10 @@ layout(std140) uniform b_Locals {
     vec4 u_UvRange;
 };
 
+in vec2 v_TexCoord;
+
+uniform sampler2D t_Map;
+
 void main() {
-    gl_FragColor = u_Color;
+    gl_FragColor = u_Color * texture(t_Map, v_TexCoord);
 }

@@ -15,7 +15,12 @@ const BINDINGS: program::Bindings = program::Bindings {
         program::UniformBlockBinding::None,
         program::UniformBlockBinding::None,
     ],
-    samplers: [program::SamplerBinding::None; program::MAX_SAMPLERS],
+    samplers: [
+        program::SamplerBinding::Optional(b"t_Map\0"),
+        program::SamplerBinding::None,
+        program::SamplerBinding::None,
+        program::SamplerBinding::None,
+    ],  
 };
 
 /// Locals uniform block binding.
@@ -23,8 +28,9 @@ const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
     name: b"b_Locals\0",
     index: 0,
     init: Locals {
-        u_Color: [0.0; 4],
         u_World: IDENTITY,
+        u_Color: [0.0; 4],
+        u_UvRange: [0.0, 1.0, 0.0, 1.0],
     },
 };
 
@@ -68,13 +74,19 @@ struct Locals {
 
     /// Solid rendering color.
     u_Color: [f32; 4],
+
+    /// Texture co-ordinate range.
+    u_UvRange: [f32; 4],
 }
 
 /// Basic rendering pipeline.
 pub struct Basic {
-    /// The program.
-    program: gpu::Program,
+    /// Program with texture.
+    without_texture: gpu::Program,
 
+    /// Program without texture.
+    with_texture: gpu::Program,
+ 
     /// Locals uniform buffer.
     locals: gpu::Buffer,
 
@@ -98,6 +110,11 @@ impl Basic {
                 Locals {
                     u_World: mx_world,
                     u_Color: color,
+                    u_UvRange: {
+                        map
+                            .map(|tex| tex.uv_range())
+                            .unwrap_or([0.0, 1.0, 0.0, 1.0])
+                    },
                 },
             ],
         );
@@ -111,7 +128,11 @@ impl Basic {
             ],
         );
         gpu::Invocation {
-            program: &self.program,
+            program: if map.is_some() {
+                &self.with_texture
+            } else {
+                &self.without_texture
+            },
             uniforms: [
                 Some(&self.locals),
                 Some(&self.globals),
@@ -131,7 +152,8 @@ impl Basic {
     pub fn new(factory: &gpu::Factory) -> Self {
         let locals = make_uniform_buffer(factory, &LOCALS);
         let globals = make_uniform_buffer(factory, &GLOBALS);
-        let program = make_program(factory, "basic", &BINDINGS);
-        Basic { program, locals, globals }
+        let without_texture = make_program(factory, "basic", &BINDINGS);
+        let with_texture = make_program(factory, "basic_with_texture", &BINDINGS);
+        Basic { with_texture, without_texture, locals, globals }
     }
 }

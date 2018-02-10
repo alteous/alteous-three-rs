@@ -281,7 +281,7 @@ impl Renderer {
         let mx_view = {
             use ::cgmath::Transform;
             let node = &hub[camera];
-            let inv_transform = node.transform//node.world_transform
+            let inv_transform = node.transform
                 .inverse_transform()
                 .unwrap();
             ::cgmath::Matrix4::from(inv_transform)
@@ -372,6 +372,20 @@ impl Renderer {
                             color::to_linear_rgba(params.color, 1.0),
                         )
                     };
+                }
+                Material::Sprite(ref params) => {
+                    primitive = gpu::Primitive::TriangleStrip;
+                    state = gpu::State {
+                        culling: gpu::pipeline::Culling::None,
+                        .. Default::default()
+                    };
+                    invocation = self.programs.basic.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        [1.0, 1.0, 1.0, 1.0],
+                        Some(&params.map),
+                    );
                 }
                 _ => unimplemented!(),
             };
@@ -506,7 +520,7 @@ impl OldRenderer {
     }
 
     /// See [`Window::render`](struct.Window.html#method.render).
-    pub fn old_render(
+    pub fn ol
         &mut self,
         scene: &Scene,
         camera: &Camera,

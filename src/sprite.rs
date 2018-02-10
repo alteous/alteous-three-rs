@@ -10,11 +10,12 @@ pub struct Sprite {
 three_object!(Sprite::object);
 
 impl Sprite {
-    pub(crate) fn _new(object: object::Base) -> Self {
+    pub(crate) fn new(object: object::Base) -> Self {
         Sprite { object }
     }
 
-    /// Set area of the texture to render. It can be used in sequential animations.
+    /// Set area of the texture to render.
+    /// It can be used in sequential animations.
     pub fn set_texel_range<P, S>(
         &mut self,
         base: P,
