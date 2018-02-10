@@ -54,12 +54,14 @@ fn main() {
         input.update();
         if let Some(diff) = input.timed(three::AXIS_LEFT_RIGHT) {
             angle += cgmath::Rad(1.5 * diff);
-            let q = cgmath::Quaternion::from_angle_y(angle);
-            cuboid.set_orientation(q);
-            cylinder.set_orientation(q);
-            sphere.set_orientation(q);
-            line.set_orientation(q);
+        } else {
+            angle += cgmath::Rad(0.5 * input.delta_time());
         }
+        let q = cgmath::Quaternion::from_angle_y(angle);
+        cuboid.set_orientation(q);
+        cylinder.set_orientation(q);
+        sphere.set_orientation(q);
+        line.set_orientation(q);
         renderer.render(&scene, &camera, &window);
         window.swap_buffers();
     }
