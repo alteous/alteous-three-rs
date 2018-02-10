@@ -8,6 +8,9 @@ use texture::Texture;
 #[doc(inline)]
 pub use self::basic::Basic;
 
+#[doc(inline)]
+pub use self::line::Line;
+
 /// Basic material API.
 pub mod basic {
     use super::*;
@@ -59,19 +62,54 @@ impl Default for Lambert {
     }
 }
 
-/// Parameters for a line material.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Line {
-    /// Solid line color.
-    ///
-    /// Default: `0xFFFFFF` (white).
-    pub color: Color,
-}
+/// Line material API.
+pub mod line {
+    use color;
+    use gpu;
+    
+    /// Interpretation of vertex layout.
+    #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+    pub enum Layout {
+        /// `[(start, end), (start, end), ...]`.
+        Segments,
 
-impl Default for Line {
-    fn default() -> Self {
-        Self {
-            color: color::WHITE,
+        /// `[start, end/start, ..., end/start, end]`.
+        Strip,
+
+        /// `[start, end/start, ..., end/start, end, <implicit_start>]`.
+        Loop,
+    }
+
+    impl Layout {
+        pub(crate) fn as_gpu_primitive(&self) -> gpu::draw_call::Primitive {
+            match *self {
+                Layout::Segments => gpu::draw_call::Primitive::Lines,
+                Layout::Strip => gpu::draw_call::Primitive::LineStrip,
+                Layout::Loop => gpu::draw_call::Primitive::LineLoop,
+            }
+        }
+    }
+    
+    /// Parameters for a line material.
+    #[derive(Clone, Debug, PartialEq)]
+    pub struct Line {
+        /// Solid line color.
+        ///
+        /// Default: `0xFFFFFF` (white).
+        pub color: color::Color,
+
+        /// Interpretation of vertex layout.
+        ///
+        /// Default: `Strip`.
+        pub layout: Layout,
+    }
+
+    impl Default for Line {
+        fn default() -> Self {
+            Self {
+                color: color::WHITE,
+                layout: Layout::Strip,
+            }
         }
     }
 }

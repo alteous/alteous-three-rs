@@ -43,7 +43,10 @@ fn main() {
             [0.0, 1.0, 0.0].into(),
             [2.0, -1.0, 0.0].into(),
         ]);
-        let material = three::material::Line { color: 0x0000FF };
+        let material = three::material::Line {
+            color: 0x0000FF,
+            layout: three::material::line::Layout::Loop,
+        };
         factory.mesh(geometry, material)
     };
     line.set_position([3.0, 3.0, 0.0]);

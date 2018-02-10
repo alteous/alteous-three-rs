@@ -340,7 +340,7 @@ impl Renderer {
                     );
                 } 
                 Material::Line(ref params) => {
-                    primitive = gpu::Primitive::Lines;
+                    primitive = params.layout.as_gpu_primitive();
                     state = gpu::State {
                         culling: gpu::pipeline::Culling::None,
                         polygon_mode: gpu::pipeline::PolygonMode::Line(1),
