@@ -273,11 +273,12 @@ impl Renderer {
         framebuffer: &T,
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
-        let mut render_nodes = Vec::new();
+        let mut visual_nodes = Vec::new();
+        let mut light_nodes = Vec::new();
         let framebuffer = framebuffer.as_ref();
 
         hub.process_messages();
-        hub.update_graph(scene, &mut render_nodes);
+        hub.update_graph(scene, &mut visual_nodes, &mut light_nodes);
         let mx_view = {
             use ::cgmath::Transform;
             let node = &hub[camera];
@@ -286,13 +287,17 @@ impl Renderer {
                 .unwrap();
             ::cgmath::Matrix4::from(inv_transform)
         };
-        let mx_projection = ::cgmath::Matrix4::from(camera.matrix(1.0));
+        let (width, height) = framebuffer.dimensions();
+        let aspect_ratio = width as f32 / height as f32;
+        let mx_projection = ::cgmath::Matrix4::from(
+            camera.matrix(aspect_ratio)
+        );
         let mx_view_projection: [[f32; 4]; 4] = {
             (mx_projection * mx_view).into()
         };
 
         self.backend.clear(framebuffer, CLEAR_OP);
-        for ptr in &render_nodes {
+        for ptr in &visual_nodes {
             let node = &hub.nodes[ptr];
             let data = match node.sub_node {
                 SubNode::Visual(ref data) => data,

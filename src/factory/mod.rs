@@ -88,17 +88,6 @@ pub struct Factory {
     texture_cache: TextureCache,
 }
 
-/*
-/// `Factory` is used to instantiate game objects.
-pub struct OldFactory {
-    pub(crate) backend: BackendFactory,
-    hub: HubPtr,
-    quad_buf: gfx::handle::Buffer<BackendResources, Vertex>,
-    texture_cache: HashMap<PathBuf, Texture<[f32; 4]>>,
-    default_sampler: gfx::handle::Sampler<BackendResources>,
-}
-*/
-
 /// Loaded glTF 2.0 returned by [`Factory::load_gltf`].
 ///
 /// [`Factory::load_gltf`]: struct.Factory.html#method.load_gltf
@@ -168,11 +157,13 @@ impl Factory {
     }
 
     /// Create a duplicate mesh with a different material.
-    pub fn mesh_duplicate<M: Into<Material>>(
+    pub fn mesh_duplicate<M>(
         &mut self,
         mesh: &Mesh,
         material: M,
-    ) -> Mesh {
+    ) -> Mesh
+        where M: Into<Material>
+    {
         let mut hub = self.hub.lock().unwrap();
         let mut data = match hub[mesh.as_ref()].sub_node {
             hub::SubNode::Visual(ref data) => data.clone(),
@@ -184,11 +175,13 @@ impl Factory {
     }
 
     /// Create new `Mesh` with desired `Geometry` and `Material`.
-    pub fn mesh<M: Into<Material>>(
+    pub fn mesh<M>(
         &mut self,
         geometry: Geometry,
         material: M,
-    ) -> Mesh {
+    ) -> Mesh
+        where M: Into<Material>
+    {
         let material = material.into();
         let vertices = render::make_vertices(&geometry);
         let visual_data = if geometry.faces.is_empty() {
@@ -398,31 +391,9 @@ impl Factory {
         Sprite::new(object)
     }
 }
-
 /*
-impl ops::Deref for Factory {
-    type Target = gpu::Factory;
-    fn deref(&self) -> &Self::Target {
-        &self.backend
-    }
-}
-*/
-
-/********
 impl OldFactory {
-    pub(crate) fn old_new(mut backend: BackendFactory) -> Self {
-        let quad_buf = backend.create_vertex_buffer(&QUAD);
-        let default_sampler = backend.create_sampler_linear();
-        OldFactory {
-            backend: backend,
-            hub: Hub::new(),
-            quad_buf,
-            texture_cache: HashMap::new(),
-            default_sampler: default_sampler,
-        }
-    }
-
-    /// Create a new [`Bone`], one component of a [`Skeleton`].
+/// Create a new [`Bone`], one component of a [`Skeleton`].
     ///
     /// [`Bone`]: ../skeleton/struct.Bone.html
     /// [`Skeleton`]: ../skeleton/struct.Skeleton.html
@@ -463,10 +434,6 @@ impl OldFactory {
         let data = hub::SkeletonData { bones, gpu_buffer, inverse_bind_matrices, gpu_buffer_view, cpu_buffer };
         let object = self.hub.lock().unwrap().spawn_skeleton(data);
         Skeleton { object }
-    }
-
-    fn mesh_vertices(geometry: &Geometry, targets: [Target; MAX_TARGETS]) -> Vec<Vertex> {
-
     }
 
     /// Create new `Mesh` with desired `Geometry` and `Material`.
@@ -617,55 +584,6 @@ impl OldFactory {
         }
     }
 
-    /// Create new sprite from `Material`.
-    pub fn sprite(
-        &mut self,
-        material: material::Sprite,
-    ) -> Sprite {
-        Sprite::new(self.hub.lock().unwrap().spawn_visual(
-            material.into(),
-            GpuData {
-                slice: gfx::Slice::new_match_vertex_buffer(&self.quad_buf),
-                vertices: self.quad_buf.clone(),
-                constants: self.backend.create_constant_buffer(1),
-                pending: None,
-                displacement_contributions: ZEROED_DISPLACEMENT_CONTRIBUTION,
-            },
-            None,
-        ))
-    }
-
-    /// Create a `Sampler` with default properties.
-    ///
-    /// The default sampler has `Clamp` as its horizontal and vertical
-    /// wrapping mode and `Scale` as its filtering method.
-    pub fn default_sampler(&self) -> Sampler {
-        Sampler(self.default_sampler.clone())
-    }
-
-    /// Create new `Sampler`.
-    pub fn sampler(
-        &mut self,
-        filter_method: ::FilterMethod,
-        horizontal_wrap_mode: ::WrapMode,
-        vertical_wrap_mode: ::WrapMode,
-    ) -> Sampler {
-        unimplemented!()
-        /*
-        use gfx::texture::Lod;
-        let info = gfx::texture::SamplerInfo {
-            filter: filter_method,
-            wrap_mode: (horizontal_wrap_mode, vertical_wrap_mode, WrapMode::Clamp),
-            lod_bias: Lod::from(0.0),
-            lod_range: (Lod::from(-8000.0), Lod::from(8000.0)),
-            comparison: None,
-            border: gfx::texture::PackedColor(0),
-        };
-        let inner = self.backend.create_sampler(info);
-        Sampler(inner)
-         */
-    }
-/*
     /// Create new `ShadowMap`.
     pub fn shadow_map(
         &mut self,
@@ -678,34 +596,7 @@ impl OldFactory {
         ShadowMap { resource, target }
     }
 
-    /// Create a basic mesh pipeline using a custom shader.
-    pub fn basic_pipeline<P: AsRef<Path>>(
-        &mut self,
-        dir: P,
-        name: &str,
-        primitive: gfx::Primitive,
-        rasterizer: gfx::state::Rasterizer,
-        color_mask: gfx::state::ColorMask,
-        blend_state: gfx::state::Blend,
-        depth_state: gfx::state::Depth,
-        stencil_state: gfx::state::Stencil,
-    ) -> Result<BasicPipelineState, render::PipelineCreationError> {
-        use gfx::traits::FactoryExt;
-        let vs = render::Source::user(&dir, name, "vs")?;
-        let ps = render::Source::user(&dir, name, "ps")?;
-        let shaders = self.backend
-            .create_shader_set(vs.0.as_bytes(), ps.0.as_bytes())?;
-        let init = basic_pipe::Init {
-            out_color: ("Target0", color_mask, blend_state),
-            out_depth: (depth_state, stencil_state),
-            ..basic_pipe::new()
-        };
-        let pso = self.backend
-            .create_pipeline_state(&shaders, primitive, rasterizer, init)?;
-        Ok(pso)
-    }
-    
-    /// Create new UI (on-screen) text. See [`Text`](struct.Text.html) for default settings.
+/// Create new UI (on-screen) text. See [`Text`](struct.Text.html) for default settings.
     pub fn ui_text<S: Into<String>>(
         &mut self,
         font: &Font,
@@ -715,14 +606,14 @@ impl OldFactory {
         let object = self.hub.lock().unwrap().spawn_ui_text(data);
         Text::with_object(object)
     }
-*/
+
     /// Create new audio source.
     pub fn audio_source(&mut self) -> Source {
         let data = AudioData::new();
         let object = self.hub.lock().unwrap().spawn_audio_source(data);
         Source::with_object(object)
     }
-/*
+
     /// Map vertices for updating their data.
     pub fn map_vertices<'a>(
         &'a mut self,
@@ -792,7 +683,7 @@ impl OldFactory {
             ));
         Font::new(buffer, file_path.to_owned(), self.backend.clone())
     }
-*/
+
     fn parse_texture_format(path: &Path) -> image::ImageFormat {
         use image::ImageFormat as F;
         let extension = path.extension()
@@ -812,33 +703,6 @@ impl OldFactory {
             "hdr" => F::HDR,
             _ => panic!("Unrecognized image extension: {}", extension),
         }
-    }
-
-    fn load_texture_impl() -> Texture<[f32; 4]> {
-        unimplemented!()
-    }
-            /*
-        use gfx::texture as t;
-        let format = OldFactory::parse_texture_format(path);
-        let file = fs::File::open(path).unwrap_or_else(|e| panic!("Unable to open {}: {:?}", path.display(), e));
-        let img = image::load(io::BufReader::new(file), format)
-            .unwrap_or_else(|e| panic!("Unable to decode {}: {:?}", path.display(), e))
-            .flipv()
-            .to_rgba();
-        let (width, height) = img.dimensions();
-        let kind = t::Kind::D2(width as t::Size, height as t::Size, t::AaMode::Single);
-        let mipmap = gfx::texture::Mipmap::Allocated;
-        let (_, view) = factory
-            .create_texture_immutable_u8::<gfx::format::Srgba8>(kind, mipmap, &[&img])
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Unable to create GPU texture for {}: {:?}",
-                    path.display(),
-                    e
-                )
-            });
-        Texture::new(view, sampler.0, [width, height])
-
     }
 
     fn load_cubemap_impl<P: AsRef<Path>>(
@@ -878,21 +742,6 @@ impl OldFactory {
                 panic!("Unable to create GPU texture for cubemap: {:?}", e);
             });
         CubeMap::new(view, sampler.0)
-    }
-
-    fn request_texture<P: AsRef<Path>>(
-        &mut self,
-        path: P,
-    ) -> Texture<[f32; 4]> {
-        let sampler = self.default_sampler();
-        match self.texture_cache.entry(path.as_ref().to_owned()) {
-            Entry::Occupied(e) => e.get().clone(),
-            Entry::Vacant(e) => {
-                let tex = Self::load_texture_impl(path.as_ref(), sampler, &mut self.backend);
-                e.insert(tex.clone());
-                tex
-            }
-        }
     }
 
     fn load_obj_material(
@@ -961,15 +810,6 @@ impl OldFactory {
                 panic!("Unable to create GPU texture from memory: {:?}", e);
             });
         Texture::new(view, sampler.0, [width as u32, height as u32])
-    }
-
-    /// Load texture from file.
-    /// Supported file formats are: PNG, JPEG, GIF, WEBP, PPM, TIFF, TGA, BMP, ICO, HDR.
-    pub fn load_texture<P: AsRef<Path>>(
-        &mut self,
-        path_str: P,
-    ) -> Texture<[f32; 4]> {
-        self.request_texture(path_str)
     }
 
     /// Load cubemap from files.
@@ -1087,7 +927,7 @@ impl OldFactory {
 
         (groups, meshes)
     }
-*/
+
     /// Load audio from file. Supported formats are Flac, Vorbis and WAV.
     pub fn load_audio<P: AsRef<Path>>(
         &self,

@@ -334,7 +334,8 @@ impl Hub {
     pub(crate) fn update_graph(
         &mut self,
         scene: &Scene,
-        render_nodes: &mut Vec<NodePointer>,
+        visual_nodes: &mut Vec<NodePointer>,
+        light_nodes: &mut Vec<NodePointer>,
     ) {
         #[derive(Debug)]
         struct Item {
@@ -364,11 +365,12 @@ impl Hub {
 
             if self.nodes[&item.ptr].visible {
                 match self.nodes[&item.ptr].sub_node {
-                    SubNode::Visual(_) => render_nodes.push(item.ptr.clone()),
+                    SubNode::Visual(_) => visual_nodes.push(item.ptr.clone()),
+                    SubNode::Light(_) => light_nodes.push(item.ptr.clone()),
                     _ => {},
                 }
             }
-            
+
             let next = self.nodes[&item.ptr].next_sibling.clone();
             if let Some(ptr) = next {
                 stack.push(Item {
