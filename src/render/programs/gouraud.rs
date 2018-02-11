@@ -3,6 +3,7 @@
 //! Useful for rendering meshes with a solid color or rendering mesh wireframes.
 
 use gpu::{self, framebuffer as fbuf, program};
+use std::marker;
 use super::*;
 
 /// Basic pipeline bindings.
@@ -20,19 +21,14 @@ pub const BINDINGS: program::Bindings = program::Bindings {
 pub const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
     name: b"b_Locals\0",
     index: 0,
-    init: Locals {
-        u_Color: [0.0; 4],
-        u_World: IDENTITY,
-    },
+    marker: marker::PhantomData,
 };
 
 /// Globals uniform block binding.
 pub const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
     name: b"b_Globals\0",
     index: 1,
-    init: Globals {
-        u_ViewProjection: IDENTITY,
-    },
+    marker: marker::PhantomData,
 };
 
 /// Clear operation for the basic pipeline.

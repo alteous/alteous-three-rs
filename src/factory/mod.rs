@@ -282,11 +282,8 @@ impl Factory {
         let hub = self.hub.clone();
         let background = scene::Background::Color(color::BLACK);
         let first_child = None;
-        Scene {
-            hub,
-            background,
-            first_child,
-        }
+        let ambient_light = color::BLACK;
+        Scene { hub, background, first_child, ambient_light }
     }
 
     /// Create new `AmbientLight`.

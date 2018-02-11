@@ -31,7 +31,7 @@ three_object!(Cube::group);
 
 fn create_cubes(
     factory: &mut three::Factory,
-    materials: &[three::material::Lambert],
+    materials: &[three::material::Phong],//&[three::material::Lambert],
     levels: &[Level],
 ) -> Vec<Cube> {
     let mut geometry = three::Geometry::cuboid(2.0, 2.0, 2.0);
@@ -130,6 +130,7 @@ fn main() {
     let (mut window, mut input, mut renderer, mut factory) = three::Window::new("Three-rs group example");
     let mut scene = factory.scene();
     scene.background = three::Background::Color(0x204060);
+    scene.ambient_light = 0xFFFF00;
 
     let camera = factory.perspective_camera(60.0, 1.0 .. 100.0);
     camera.look_at([-1.8, -8.0, 7.0], [0.0, 0.0, 3.5], None);
@@ -141,7 +142,7 @@ fn main() {
 
     let materials: Vec<_> = COLORS
         .iter()
-        .map(|&color| three::material::Lambert { color, flat: false })
+        .map(|&color| three::material::Phong { color, glossiness: 80.0 })//three::material::Lambert { color, flat: false })
         .collect();
     let levels: Vec<_> = SPEEDS.iter().map(|&speed| Level { speed }).collect();
     let mut cubes = create_cubes(&mut factory, &materials, &levels);

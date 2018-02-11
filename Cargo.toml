@@ -23,6 +23,7 @@ window = ["glutin"]
 includedir_codegen = "0.2.0"
 
 [dependencies]
+arraymap = "0.1.0"
 arrayvec = "0.4"
 bitflags = "0.9"
 cgmath = { version = "0.15", features = ["mint"] }

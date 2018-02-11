@@ -3,7 +3,7 @@
 use color;
 use gpu;
 use gpu::{buffer as buf, framebuffer as fbuf};
-use std::{iter, mem};
+use std::{cmp, iter, mem};
 
 pub mod programs;
 pub mod source;
@@ -13,7 +13,7 @@ use gpu::buffer::Format;
 use itertools::Either;
 use Framebuffer;
 
-use self::programs::Programs;
+use self::programs::{Lighting, Programs, MAX_POINT_LIGHTS};
 pub use self::source::Source;
 
 /// Normalized signed 8-bit rational.
@@ -167,7 +167,7 @@ pub fn make_vertex_array(
     indices: Option<&[[u32; 3]]>,
     vertices: &[Vertex],
 ) -> gpu::VertexArray {
-    let mut vbuf = factory.buffer(buf::Kind::Array, buf::Usage::StaticDraw);
+    let mut vbuf = factory.empty_buffer(buf::Kind::Array, buf::Usage::StaticDraw);
     factory.initialize_buffer(&mut vbuf, vertices);
 
     let positions = gpu::Accessor::new(
@@ -208,7 +208,7 @@ pub fn make_vertex_array(
     );
 
     let indices = indices.map(|slice| {
-        let mut buffer = factory.buffer(buf::Kind::Index, buf::Usage::StaticDraw);
+        let mut buffer = factory.empty_buffer(buf::Kind::Index, buf::Usage::StaticDraw);
         factory.initialize_buffer(&mut buffer, slice);
         gpu::Accessor::new(buffer, Format::U32(1), 0, 0)
     });
@@ -274,18 +274,21 @@ impl Renderer {
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
         let mut visual_nodes = Vec::new();
-        let mut light_nodes = Vec::new();
+        let mut point_light_nodes = Vec::new();
         let framebuffer = framebuffer.as_ref();
 
         hub.process_messages();
-        hub.update_graph(scene, &mut visual_nodes, &mut light_nodes);
-        let mx_view = {
+        hub.update_graph(scene, &mut visual_nodes, &mut point_light_nodes);
+
+        let (camera_position, mx_view): (::cgmath::Vector3<f32>, ::cgmath::Matrix4<f32>);
+        {
             use ::cgmath::Transform;
             let node = &hub[camera];
             let inv_transform = node.transform
                 .inverse_transform()
                 .unwrap();
-            ::cgmath::Matrix4::from(inv_transform)
+            camera_position = node.transform.disp.clone();
+            mx_view = inv_transform.into();
         };
         let (width, height) = framebuffer.dimensions();
         let aspect_ratio = width as f32 / height as f32;
@@ -295,6 +298,34 @@ impl Renderer {
         let mx_view_projection: [[f32; 4]; 4] = {
             (mx_projection * mx_view).into()
         };
+
+        point_light_nodes.sort_unstable_by(|ref lptr, ref rptr| {
+            use ::cgmath::MetricSpace;
+            let lnode = &hub.nodes[lptr];
+            let rnode = &hub.nodes[rptr];
+            let ldist = lnode.world_transform.disp.distance2(camera_position);
+            let rdist = rnode.world_transform.disp.distance2(camera_position);
+            ldist.partial_cmp(&rdist).unwrap_or(cmp::Ordering::Greater)
+        });
+        let mut lighting = Lighting::default();
+        lighting.ambient = (scene.ambient_light, 0.1);
+        for i in 0 .. MAX_POINT_LIGHTS {
+            use ::cgmath::EuclideanSpace;
+            if let Some(ptr) = point_light_nodes.get(i) {
+                let node = &hub.nodes[ptr];
+                let data = match node.sub_node {
+                    SubNode::Light(ref data) => data,
+                    _ => unreachable!(),
+                };
+                lighting.points[i].0 = ::cgmath::Point3::from_vec(node.world_transform.disp).into();
+                lighting.points[i].1 = data.color;
+                lighting.points[i].2 = data.intensity;
+            } else {
+                lighting.points[i].0 = [0.0; 3].into();
+                lighting.points[i].1 = 0xFFFFFF;
+                lighting.points[i].2 = 0.0;
+            }
+        }
 
         self.backend.clear(framebuffer, CLEAR_OP);
         for ptr in &visual_nodes {
@@ -326,7 +357,8 @@ impl Renderer {
                         &self.backend,
                         mx_view_projection,
                         mx_world,
-                        color::to_linear_rgba(params.color, 1.0),
+                        &lighting,
+                        params.glossiness,
                     );
                 }
                 Material::Wireframe(ref params) => {

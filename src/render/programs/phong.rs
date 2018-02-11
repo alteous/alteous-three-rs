@@ -1,6 +1,8 @@
 //! Phong rendering pipeline.
 
+use color;
 use gpu::{self, framebuffer as fbuf, program};
+use std::{marker, mem};
 use super::*;
 
 /// Basic pipeline bindings.
@@ -18,19 +20,14 @@ pub const BINDINGS: program::Bindings = program::Bindings {
 pub const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
     name: b"b_Locals\0",
     index: 0,
-    init: Locals {
-        u_Color: [0.0; 4],
-        u_World: IDENTITY,
-    },
+    marker: marker::PhantomData,
 };
 
 /// Globals uniform block binding.
 pub const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
     name: b"b_Globals\0",
     index: 1,
-    init: Globals {
-        u_ViewProjection: IDENTITY,
-    },
+    marker: marker::PhantomData,
 };
 
 /// Clear operation for the basic pipeline.
@@ -39,37 +36,107 @@ pub const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
     depth: fbuf::ClearDepth::Yes { z: 1.0 },
 };
 
+/// Ambient lighting parameters.
+#[derive(Clone, Copy, Debug)]
+struct AmbientLight {
+    // 0
+    color: [f32; 3],
+
+    // 12
+    intensity: f32,
+
+    // 16
+}
+
+/// Directional lighting parameters.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+struct DirectionalLight {
+    // 0
+    direction: [f32; 3],
+    
+    // 12
+    _0: u32,
+    
+    // 16
+    color: [f32; 3],
+    
+    // 28
+    intensity: f32,
+    
+    // 32
+}
+
+/// Point light parameters.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+struct PointLight {
+    // 0
+    position: [f32; 3],
+
+    // 12
+    _0: u32,
+    
+    // 16
+    color: [f32; 3],
+
+    // 28
+    intensity: f32,
+
+    // 32
+}
+
 /// Per-world variables.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
-#[repr(C)]
 pub struct Globals {
+    // 0
     /// Combined world-to-view and view-to-projection matrix.
-    pub u_ViewProjection: [[f32; 4]; 4],
+    u_ViewProjection: [[f32; 4]; 4],
+
+    // 64
+    /// Global ambient lighting.
+    u_AmbientLight: AmbientLight,
+
+    // 80
+    /// Global directional light.
+    u_DirectionalLight: DirectionalLight,
+
+    // 112
 }
 
 /// Per-instance variables.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
-#[repr(C)]
 pub struct Locals {
+    // 0
     /// Model-to-world matrix.
-    pub u_World: [[f32; 4]; 4],
+    u_World: [[f32; 4]; 4],
 
-    /// Solid rendering color.
-    pub u_Color: [f32; 4],
+    // 64
+    /// Material specular glossiness constant.
+    u_Glossiness: f32,
+
+    // 68
+    _0: [f32; 3],
+
+    // 80
+    /// Local point lights.
+    u_PointLights: [PointLight; MAX_POINT_LIGHTS],
+
+    // 336
 }
 
 /// Basic rendering pipeline.
 pub struct Phong {
     /// The program.
-    pub program: gpu::Program,
+    program: gpu::Program,
 
     /// Locals uniform buffer.
-    pub locals: gpu::Buffer,
+    locals: gpu::Buffer,
 
     /// Globals uniform buffer.
-    pub globals: gpu::Buffer,
+    globals: gpu::Buffer,
 }
 
 impl Phong {
@@ -87,14 +154,25 @@ impl Phong {
         backend: &gpu::Factory,
         mx_view_projection: [[f32; 4]; 4],
         mx_world: [[f32; 4]; 4],
-        color: [f32; 4],
+        lighting: &Lighting,
+        glossiness: f32,
     ) -> gpu::Invocation {
+        use ::arraymap::ArrayMap;
         backend.overwrite_buffer(
             self.locals.as_slice(),
             &[
                 Locals {
-                    u_World: mx_world,
-                    u_Color: color,
+                    u_World: mx_world.into(),
+                    u_Glossiness: glossiness.into(),
+                    u_PointLights: lighting.points.map(|entry| {
+                        PointLight {
+                            position: entry.0.into(),
+                            color: color::to_linear_rgb(entry.1).into(),
+                            intensity: entry.2.into(),
+                            .. unsafe { mem::uninitialized() }
+                        }
+                    }),
+                    .. unsafe { mem::uninitialized() }
                 },
             ],
         );
@@ -102,7 +180,17 @@ impl Phong {
             self.globals.as_slice(),
             &[
                 Globals {
-                    u_ViewProjection: mx_view_projection,
+                    u_ViewProjection: mx_view_projection.into(),
+                    u_AmbientLight: AmbientLight {
+                        color: color::to_linear_rgb(lighting.ambient.0).into(),
+                        intensity: lighting.ambient.1.into(),
+                    },
+                    u_DirectionalLight: DirectionalLight {
+                        direction: lighting.directional.0.into(),
+                        color: color::to_linear_rgb(lighting.directional.1).into(),
+                        intensity: lighting.directional.2.into(),
+                        .. unsafe { mem::uninitialized() }
+                    },
                 },
             ],
         );

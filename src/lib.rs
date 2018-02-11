@@ -253,6 +253,7 @@
 //! [`Scene`]: scene/struct.Scene.html
 //! [`Window`]: window/struct.Window.html
 
+extern crate arraymap;
 extern crate arrayvec;
 extern crate cgmath;
 extern crate froggy;

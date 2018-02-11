@@ -3,6 +3,7 @@
 //! Useful for rendering meshes with a solid color or rendering mesh wireframes.
 
 use gpu::program;
+use std::marker;
 use super::*;
 
 use texture::Texture;
@@ -27,23 +28,14 @@ const BINDINGS: program::Bindings = program::Bindings {
 const LOCALS: UniformBlockBinding<Locals> = UniformBlockBinding {
     name: b"b_Locals\0",
     index: 0,
-    init: Locals {
-        u_World: IDENTITY,
-        u_Color: [0.0; 4],
-        u_UvRange: [0.0, 1.0, 0.0, 1.0],
-    },
+    marker: marker::PhantomData,
 };
 
 /// Globals uniform block binding.
 const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
     name: b"b_Globals\0",
     index: 1,
-    init: Globals {
-        u_ViewProjection: IDENTITY,
-        u_InverseProjection: IDENTITY,
-        u_View: IDENTITY,
-        u_NumLights: 0,
-    },
+    marker: marker::PhantomData,
 };
 
 /// Per-world variables.
@@ -123,7 +115,9 @@ impl Basic {
             &[
                 Globals {
                     u_ViewProjection: mx_view_projection,
-                    .. GLOBALS.init
+                    u_InverseProjection: IDENTITY,
+                    u_View: IDENTITY,
+                    u_NumLights: 0,
                 },
             ],
         );

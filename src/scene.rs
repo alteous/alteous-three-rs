@@ -30,6 +30,8 @@ pub struct Scene {
 
     /// See [`Background`](struct.Background.html).
     pub background: Background,
+    /// Ambient lighting.
+    pub ambient_light: Color,
 }
 
 impl Scene {

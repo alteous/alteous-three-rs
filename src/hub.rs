@@ -35,13 +35,14 @@ pub(crate) struct DynamicData {
     pub buffer: gpu::Buffer,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SubLight {
     Ambient,
     Directional,
     Hemisphere { ground: Color },
     Point,
 }
+
 #[derive(Clone, Debug)]
 pub(crate) struct LightData {
     pub color: Color,
@@ -335,7 +336,7 @@ impl Hub {
         &mut self,
         scene: &Scene,
         visual_nodes: &mut Vec<NodePointer>,
-        light_nodes: &mut Vec<NodePointer>,
+        point_light_nodes: &mut Vec<NodePointer>,
     ) {
         #[derive(Debug)]
         struct Item {
@@ -366,7 +367,11 @@ impl Hub {
             if self.nodes[&item.ptr].visible {
                 match self.nodes[&item.ptr].sub_node {
                     SubNode::Visual(_) => visual_nodes.push(item.ptr.clone()),
-                    SubNode::Light(_) => light_nodes.push(item.ptr.clone()),
+                    SubNode::Light(ref data) => {
+                        if data.sub_light == SubLight::Point {
+                            point_light_nodes.push(item.ptr.clone());
+                        }
+                    },
                     _ => {},
                 }
             }
