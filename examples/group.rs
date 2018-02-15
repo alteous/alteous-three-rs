@@ -115,19 +115,18 @@ fn create_cubes(
     list
 }
 
-const COLORS: [three::Color; 7] = [0xffff80, 0x8080ff, 0x80ff80, 0xff8080, 0x80ffff, 0xff80ff, 0xFF0000];
+const COLORS: [three::Color; 6] = [0xffff80, 0x8080ff, 0x80ff80, 0xff8080, 0x80ffff, 0xff80ff];
 
-const SPEEDS: [f32; 6] = [
+const SPEEDS: [f32; 5] = [
     0.7,
     -1.0,
     1.3,
     -1.6,
     1.9,
-    -2.2,
 ];
 
 fn main() {
-    let (mut window, mut input, mut renderer, mut factory) = three::Window::new("Three-rs group example");
+    let (mut window, mut input, mut renderer, mut factory) = three::init();
     let mut scene = factory.scene();
     scene.background = three::Background::Color(0x204060);
     scene.ambient_light = 0xFFFF00;
