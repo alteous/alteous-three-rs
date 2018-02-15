@@ -39,25 +39,36 @@ pub mod basic {
     }
 }
 
-/// Parameters for a Lamberian diffusion reflection model.
+/// Parameters for a Gouraud shading model.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Lambert {
-    /// Solid color applied in the absense of `map`.
+pub struct Gouraud {
+    /// Solid object color.
     ///
     /// Default: `WHITE`.
     pub color: Color,
+}
 
-    /// Specifies whether lighting should be constant over faces.
+impl Default for Gouraud {
+    fn default() -> Self {
+        Self {
+            color: color::WHITE,
+        }
+    }
+}
+
+/// Parameters for a Lamberian diffusion reflection model.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Lambert {
+    /// Solid object color.
     ///
-    /// Default: `false` (lighting is interpolated across faces).
-    pub flat: bool,
+    /// Default: `WHITE`.
+    pub color: Color,
 }
 
 impl Default for Lambert {
     fn default() -> Self {
         Self {
             color: color::WHITE,
-            flat: false,
         }
     }
 }
@@ -250,10 +261,13 @@ pub enum Material {
     /// Renders triangle meshes with a solid color or texture.
     Basic(Basic),
 
+    /// Renders triangle meshes with the Gouraud illumination model.
+    Gouraud(Gouraud),
+
     /// Renders line strip meshes with a solid color and unit width.
     Line(Line),
 
-    /// Renders triangle meshes with the Gouraud illumination model.
+    /// Renders triangle meshes with the Lambertian illumination model.
     Lambert(Lambert),
 
     /// Renders triangle meshes with the Phong illumination model.
@@ -275,6 +289,13 @@ pub enum Material {
 impl From<Basic> for Material {
     fn from(params: Basic) -> Material {
         Material::Basic(params)
+    }
+}
+
+
+impl From<Gouraud> for Material {
+    fn from(params: Gouraud) -> Material {
+        Material::Gouraud(params)
     }
 }
 

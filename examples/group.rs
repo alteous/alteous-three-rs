@@ -31,7 +31,7 @@ three_object!(Cube::group);
 
 fn create_cubes(
     factory: &mut three::Factory,
-    materials: &[three::material::Phong],//&[three::material::Lambert],
+    materials: &[three::material::Gouraud],
     levels: &[Level],
 ) -> Vec<Cube> {
     let mut geometry = three::Geometry::cuboid(2.0, 2.0, 2.0);
@@ -142,7 +142,7 @@ fn main() {
 
     let materials: Vec<_> = COLORS
         .iter()
-        .map(|&color| three::material::Phong { color, glossiness: 80.0 })//three::material::Lambert { color, flat: false })
+        .map(|&color| three::material::Gouraud { color })
         .collect();
     let levels: Vec<_> = SPEEDS.iter().map(|&speed| Level { speed }).collect();
     let mut cubes = create_cubes(&mut factory, &materials, &levels);

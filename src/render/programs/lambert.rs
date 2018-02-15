@@ -1,10 +1,10 @@
-//! Basic rendering pipeline.
-//!
-//! Useful for rendering meshes with a solid color or rendering mesh wireframes.
+//! Lambert/Gouraud rendering pipeline.
 
 use gpu::{self, framebuffer as fbuf, program};
 use std::marker;
 use super::*;
+
+use arraymap::ArrayMap;
 
 /// Basic pipeline bindings.
 pub const BINDINGS: program::Bindings = program::Bindings {
@@ -37,28 +37,100 @@ pub const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
     depth: fbuf::ClearDepth::Yes { z: 1.0 },
 };
 
+
+/// Ambient lighting parameters.
+#[derive(Clone, Copy, Debug)]
+struct AmbientLight {
+    // 0
+    color: [f32; 3],
+
+    // 12
+    intensity: f32,
+
+    // 16
+}
+
+/// Directional lighting parameters.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+struct DirectionalLight {
+    // 0
+    direction: [f32; 3],
+    
+    // 12
+    _0: u32,
+    
+    // 16
+    color: [f32; 3],
+    
+    // 28
+    intensity: f32,
+    
+    // 32
+}
+
+/// Point light parameters.
+#[derive(Clone, Copy, Debug)]
+#[repr(C)]
+struct PointLight {
+    // 0
+    position: [f32; 3],
+
+    // 12
+    _0: u32,
+    
+    // 16
+    color: [f32; 3],
+
+    // 28
+    intensity: f32,
+
+    // 32
+}
+
 /// Per-world variables.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
-#[repr(C)]
 pub struct Globals {
+    // 0
     /// Combined world-to-view and view-to-projection matrix.
-    pub u_ViewProjection: [[f32; 4]; 4],
+    u_ViewProjection: [[f32; 4]; 4],
+
+    // 64
+    /// Global ambient lighting.
+    u_AmbientLight: AmbientLight,
+
+    // 80
+    /// Global directional light.
+    u_DirectionalLight: DirectionalLight,
+
+    // 112
 }
 
 /// Per-instance variables.
 #[allow(non_snake_case)]
 #[derive(Clone, Debug)]
-#[repr(C)]
 pub struct Locals {
+    // 0
     /// Model-to-world matrix.
-    pub u_World: [[f32; 4]; 4],
+    u_World: [[f32; 4]; 4],
 
-    /// Solid rendering color.
-    pub u_Color: [f32; 4],
+    // 64
+    /// Material color.
+    u_Color: [f32; 3],
+
+    // 76
+    /// 1.0 for lighting interpolation and 0.0 otherwise.
+    u_Smooth: f32,
+
+    // 80
+    /// Local point lights.
+    u_PointLights: [PointLight; MAX_POINT_LIGHTS],
+
+    // 336
 }
 
-/// Lambert rendering pipeline.
+/// Lambert/Gouraud rendering pipeline.
 pub struct Lambert {
     /// The program.
     pub program: gpu::Program,
@@ -75,17 +147,19 @@ impl Lambert {
     pub fn new(factory: &gpu::Factory) -> Self {
         let locals = make_uniform_buffer(factory, &LOCALS);
         let globals = make_uniform_buffer(factory, &GLOBALS);
-        let program = make_program(factory, "gouraud", &BINDINGS);
-        Lambert { program, locals, globals }
+        let program = make_program(factory, "lambert", &BINDINGS);
+        Self { program, locals, globals }
     }
 
-    /// Create an invocation of the basic program.
+    /// Create an invocation of the Lambert/Gouraud program.
     pub fn invoke(
         &self,
         backend: &gpu::Factory,
         mx_view_projection: [[f32; 4]; 4],
         mx_world: [[f32; 4]; 4],
-        color: [f32; 4],
+        lighting: &Lighting,
+        color: [f32; 3],
+        smooth: bool,
     ) -> gpu::Invocation {
         backend.overwrite_buffer(
             self.locals.as_slice(),
@@ -93,6 +167,16 @@ impl Lambert {
                 Locals {
                     u_World: mx_world,
                     u_Color: color,
+                    u_Smooth: if smooth { 1.0 } else { 0.0 },
+                    u_PointLights: lighting.points.map(|entry| {
+                        PointLight {
+                            position: entry.0.into(),
+                            color: color::to_linear_rgb(entry.1).into(),
+                            intensity: entry.2.into(),
+                            .. unsafe { mem::uninitialized() }
+                        }
+                    }),
+                    .. unsafe { mem::uninitialized() }
                 },
             ],
         );
@@ -101,6 +185,16 @@ impl Lambert {
             &[
                 Globals {
                     u_ViewProjection: mx_view_projection,
+                    u_AmbientLight: AmbientLight {
+                        color: color::to_linear_rgb(lighting.ambient.0).into(),
+                        intensity: lighting.ambient.1.into(),
+                    },
+                    u_DirectionalLight: DirectionalLight {
+                        direction: lighting.directional.0.into(),
+                        color: color::to_linear_rgb(lighting.directional.1).into(),
+                        intensity: lighting.directional.2.into(),
+                        .. unsafe { mem::uninitialized() }
+                    },
                 },
             ],
         );

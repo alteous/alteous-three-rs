@@ -126,7 +126,7 @@ macro_rules! decl_shaders {
 
 decl_shaders! {
     (basic, basic, Basic),
-    (gouraud, Gouraud, Gouraud),
+    (lambert, Lambert, Lambert),
     (pbr, PBR, Pbr),
     (phong, Phong, Phong),
     (quad, quad, Quad),

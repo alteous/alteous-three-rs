@@ -394,21 +394,26 @@ impl Renderer {
                 Material::Lambert(ref params) => {
                     primitive = gpu::Primitive::Triangles;
                     state = gpu::State::default();
-                    invocation = if params.flat {
-                        self.programs.lambert.invoke(
-                            &self.backend,
-                            mx_view_projection,
-                            mx_world,
-                            color::to_linear_rgba(params.color, 1.0),
-                        )
-                    } else {
-                        self.programs.gouraud.invoke(
-                            &self.backend,
-                            mx_view_projection,
-                            mx_world,
-                            color::to_linear_rgba(params.color, 1.0),
-                        )
-                    };
+                    invocation = self.programs.lambert.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        &lighting,
+                        color::to_linear_rgb(params.color),
+                        false,
+                    );
+                }
+                Material::Gouraud(ref params) => {
+                    primitive = gpu::Primitive::Triangles;
+                    state = gpu::State::default();
+                    invocation = self.programs.lambert.invoke(
+                        &self.backend,
+                        mx_view_projection,
+                        mx_world,
+                        &lighting,
+                        color::to_linear_rgb(params.color),
+                        true,
+                    );
                 }
                 Material::Sprite(ref params) => {
                     primitive = gpu::Primitive::TriangleStrip;

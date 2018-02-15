@@ -1,7 +1,6 @@
 //! Rendering pipelines.
 
 pub mod basic;
-pub mod gouraud;
 pub mod lambert;
 pub mod phong;
 
@@ -12,7 +11,6 @@ use render::Source;
 use std::{marker, mem};
 
 pub use self::basic::Basic;
-pub use self::gouraud::Gouraud;
 pub use self::lambert::Lambert;
 pub use self::phong::Phong;
 
@@ -22,7 +20,6 @@ pub const MAX_POINT_LIGHTS: usize = 8;
 /// Built-in programs.
 pub struct Programs {
     pub(crate) basic: Basic,
-    pub(crate) gouraud: Gouraud,
     pub(crate) lambert: Lambert,
     pub(crate) phong: Phong,
 }
@@ -62,7 +59,6 @@ pub const IDENTITY: [[f32; 4]; 4] = [
 pub fn init(factory: &gpu::Factory) -> Programs {
     Programs {
         basic: Basic::new(factory),
-        gouraud: Gouraud::new(factory),
         lambert: Lambert::new(factory),
         phong: Phong::new(factory),
     }
