@@ -7,27 +7,28 @@ struct AmbientLight {
 };
 
 struct DirectionalLight {
+    vec4 position;
     vec3 direction;
     vec3 color;
     float intensity;
 };
 
 struct PointLight {
-    vec3 position;
+    vec4 position;
     vec3 color;
     float intensity;
-};
-
-layout(std140) uniform b_Locals {
-    mat4 u_World;
-    float u_Glossiness;
-    PointLight u_PointLights[MAX_POINT_LIGHTS];
 };
 
 layout(std140) uniform b_Globals {
     mat4 u_ViewProj;
     AmbientLight u_AmbientLight;
     DirectionalLight u_DirectionalLight;
+};
+
+layout(std140) uniform b_Locals {
+    mat4 u_World;
+    float u_Glossiness;
+    PointLight u_PointLights[MAX_POINT_LIGHTS];
 };
 
 layout(location = 0) in vec4 a_Position;

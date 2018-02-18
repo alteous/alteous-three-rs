@@ -1,12 +1,12 @@
 //! The renderer.
 
-use color;
-use gpu;
-use gpu::{buffer as buf, framebuffer as fbuf};
-use std::{cmp, iter, mem};
-
 pub mod programs;
 pub mod source;
+
+use color;
+use gpu::{self, buffer as buf, framebuffer as fbuf};
+use render;
+use std::{cmp, iter, mem};
 
 use factory::f2i;
 use gpu::buffer::Format;
@@ -23,8 +23,7 @@ pub struct I8Norm(pub i8);
 
 use camera::Camera;
 use geometry::Geometry;
-use hub::SubNode;
-//use light::{ShadowMap, ShadowProjection};
+use hub::{SubLight, SubNode};
 use material::Material;
 use mesh::MAX_TARGETS;
 use scene::Scene;
@@ -32,8 +31,17 @@ use scene::Scene;
 
 const NORMAL_Z: [I8Norm; 3] = [I8Norm(0), I8Norm(127), I8Norm(0)];
 const TANGENT_X: [I8Norm; 4] = [I8Norm(127), I8Norm(0), I8Norm(0), I8Norm(127)];
+
+/// Resolution of shadow map depth attachment.
+const SHADOW_MAP_RESOLUTION: (u32, u32) = (400, 400);
+
 const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
     color: fbuf::ClearColor::Yes { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+    depth: fbuf::ClearDepth::Yes { z: 1.0 },
+};
+
+const DEPTH_CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
+    color: fbuf::ClearColor::No,
     depth: fbuf::ClearDepth::Yes { z: 1.0 },
 };
 
@@ -68,12 +76,6 @@ pub const JOINT_INDICES: AttributeLocation = 4;
 /// Joint weights attribute location.
 pub const JOINT_WEIGHTS: AttributeLocation = 5;
 
-impl Default for Vertex {
-    fn default() -> Self {
-        DEFAULT_VERTEX
-    }
-}
-
 /// Basic vertex definition.
 #[allow(non_snake_case)]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -100,168 +102,49 @@ pub struct Vertex {
     pub a_JointWeights: [f32; 4],
 }
 
-/// Compiles a set of vertices from geometry.
-pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
-    let position_iter = geometry.vertices.iter();
-    let normal_iter = if geometry.normals.is_empty() {
-        Either::Left(iter::repeat(NORMAL_Z))
-    } else {
-        Either::Right(
-            geometry
-                .normals
-                .iter()
-                .map(|n| [f2i(n.x), f2i(n.y), f2i(n.z)]),
-        )
-    };
-    let tex_coord_iter = if geometry.tex_coords.is_empty() {
-        Either::Left(iter::repeat([0.0, 0.0]))
-    } else {
-        Either::Right(geometry.tex_coords.iter().map(|uv| [uv.x, uv.y]))
-    };
-    let tangent_iter = if geometry.tangents.is_empty() {
-        Either::Left(iter::repeat(TANGENT_X))
-    } else {
-        Either::Right(
-            geometry
-                .tangents
-                .iter()
-                .map(|t| [f2i(t.x), f2i(t.y), f2i(t.z), f2i(t.w)]),
-        )
-    };
-    let joint_indices_iter = if geometry.joints.indices.is_empty() {
-        Either::Left(iter::repeat([0, 0, 0, 0]))
-    } else {
-        Either::Right(geometry.joints.indices.iter().cloned())
-    };
-    let joint_weights_iter = if geometry.joints.weights.is_empty() {
-        Either::Left(iter::repeat([1.0, 1.0, 1.0, 1.0]))
-    } else {
-        Either::Right(geometry.joints.weights.iter().cloned())
-    };
-
-    izip!(
-        position_iter,
-        normal_iter,
-        tangent_iter,
-        tex_coord_iter,
-        joint_indices_iter,
-        joint_weights_iter
-    )
-        .map(|(pos, normal, tangent, uv, joint_indices, joint_weights)| {
-            Vertex {
-                a_Position: [pos.x, pos.y, pos.z, 1.0],
-                a_Normal: normal,
-                a_TexCoord: uv,
-                a_Tangent: tangent,
-                a_JointIndices: joint_indices,
-                a_JointWeights: joint_weights,
-                .. Default::default()
-            }
-        })
-        .collect()
+impl Default for Vertex {
+    fn default() -> Self {
+        DEFAULT_VERTEX
+    }
 }
-
-/// Compiles a GPU vertex array from a set of vertex and index data.
-pub fn make_vertex_array(
-    factory: &gpu::Factory,
-    indices: Option<&[[u32; 3]]>,
-    vertices: &[Vertex],
-) -> gpu::VertexArray {
-    let mut vbuf = factory.empty_buffer(buf::Kind::Array, buf::Usage::StaticDraw);
-    factory.initialize_buffer(&mut vbuf, vertices);
-
-    let positions = gpu::Accessor::new(
-        vbuf.clone(),
-        Format::F32(4),
-        offset_of!(Vertex::a_Position),
-        mem::size_of::<Vertex>(),
-    );
-    let tex_coords = gpu::Accessor::new(
-        vbuf.clone(),
-        Format::F32(2),
-        offset_of!(Vertex::a_TexCoord),
-        mem::size_of::<Vertex>(),
-    );
-    let normals = gpu::Accessor::new(
-        vbuf.clone(),
-        Format::I8Norm(3),
-        offset_of!(Vertex::a_Normal),
-        mem::size_of::<Vertex>(),
-    );
-    let tangents = gpu::Accessor::new(
-        vbuf.clone(),
-        Format::I8Norm(4),
-        offset_of!(Vertex::a_Tangent),
-        mem::size_of::<Vertex>(),
-    );
-    let joint_indices = gpu::Accessor::new(
-        vbuf.clone(),
-        Format::U16(4),
-        offset_of!(Vertex::a_JointIndices),
-        mem::size_of::<Vertex>(),
-    );
-    let joint_weights = gpu::Accessor::new(
-        vbuf.clone(),
-        Format::F32(4),
-        offset_of!(Vertex::a_JointWeights),
-        mem::size_of::<Vertex>(),
-    );
-
-    let indices = indices.map(|slice| {
-        let mut buffer = factory.empty_buffer(buf::Kind::Index, buf::Usage::StaticDraw);
-        factory.initialize_buffer(&mut buffer, slice);
-        gpu::Accessor::new(buffer, Format::U32(1), 0, 0)
-    });
-    let mut attributes = [None, None, None, None, None, None, None, None];
-    attributes[POSITION] = Some(positions);
-    attributes[NORMAL] = Some(normals);
-    attributes[TEX_COORD0] = Some(tex_coords);
-    attributes[TANGENT] = Some(tangents);
-    attributes[JOINT_INDICES] = Some(joint_indices);
-    attributes[JOINT_WEIGHTS] = Some(joint_weights);
-
-    factory.vertex_array(attributes, indices)
-}
-
-/// Enables/disables weight contributions to vertex inputs.
-#[derive(Clone, Debug)]
-pub struct DisplacementContribution {
-    /// Set to `1.0` if weights should influence `a_Position`.
-    pub position: f32,
-    /// Set to `1.0` if weights should influence `a_Normal`.
-    pub normal: f32,
-    /// Set to `1.0` if weights should influence `a_Tangent`.
-    pub tangent: f32,
-    /// The displacement weight.
-    pub weight: f32,
-}
-
-/// Set of zero valued displacement contribution which cause vertex attributes
-/// to be unchanged by morph targets.
-pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGETS] = [
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
-];
 
 /// Three renderer.
 pub struct Renderer {
     backend: gpu::Factory,
     programs: Programs,
+
+    /// Shadow framebuffer that writes to 2D F32 depth texture.
+    direct_shadow_fbo: gpu::Framebuffer,
+    // point_shadow_fbo: gpu::Framebuffer,
 }
 
 impl Renderer {
     /// Constructor.
     pub fn new(backend: gpu::Factory) -> Self {
         let programs = programs::init(&backend);
+        let shadow_map = backend.texture2(
+            SHADOW_MAP_RESOLUTION.0,
+            SHADOW_MAP_RESOLUTION.1,
+            false,
+            gpu::texture::format::F32::Depth,
+        );
+        let color_attachments = [
+            gpu::framebuffer::ColorAttachment::None,
+            gpu::framebuffer::ColorAttachment::None,
+            gpu::framebuffer::ColorAttachment::None,
+        ];
+        let depth_stencil_attachment =
+            gpu::framebuffer::DepthStencilAttachment::DepthOnly(shadow_map.clone());
+        let direct_shadow_fbo = backend.framebuffer(
+            SHADOW_MAP_RESOLUTION.0,
+            SHADOW_MAP_RESOLUTION.1,
+            color_attachments,
+            depth_stencil_attachment,
+        );
         Self {
             backend,
             programs,
+            direct_shadow_fbo,
         }
     }
 
@@ -273,70 +156,153 @@ impl Renderer {
         framebuffer: &T,
     ) {
         let mut hub = scene.hub.lock().expect("acquire hub lock");
-        let mut visual_nodes = Vec::new();
-        let mut point_light_nodes = Vec::new();
+        let camera_position = hub[camera].transform.disp.clone();
         let framebuffer = framebuffer.as_ref();
+        let aspect_ratio = framebuffer.aspect_ratio();
 
-        hub.process_messages();
-        hub.update_graph(scene, &mut visual_nodes, &mut point_light_nodes);
+        let mut visuals = Vec::new();
+        let mut lights = Vec::new();
+        hub.prepare_graph(scene, &mut visuals, &mut lights);
 
-        let (camera_position, mx_view): (::cgmath::Vector3<f32>, ::cgmath::Matrix4<f32>);
-        {
-            use ::cgmath::Transform;
-            let node = &hub[camera];
-            let inv_transform = node.transform
-                .inverse_transform()
-                .unwrap();
-            camera_position = node.transform.disp.clone();
-            mx_view = inv_transform.into();
-        };
-        let (width, height) = framebuffer.dimensions();
-        let aspect_ratio = width as f32 / height as f32;
-        let mx_projection = ::cgmath::Matrix4::from(
-            camera.matrix(aspect_ratio)
-        );
-        let mx_view_projection: [[f32; 4]; 4] = {
-            (mx_projection * mx_view).into()
-        };
-
-        point_light_nodes.sort_unstable_by(|ref lptr, ref rptr| {
-            use ::cgmath::MetricSpace;
+        // Sort the lights; first by kind, second by distance from camera.
+        let mut point_lights = Vec::new();
+        let mut direct_lights = Vec::new();
+        let mut ambient_lights = Vec::new();
+        for ptr in lights {
+            let node = &hub.nodes[&ptr];
+            let light = match node.sub_node {
+                SubNode::Light(ref data) => data,
+                _ => unreachable!(),
+            };
+            match light.sub_light {
+                SubLight::Ambient => ambient_lights.push(ptr),
+                SubLight::Directional => direct_lights.push(ptr),
+                SubLight::Point => point_lights.push(ptr),
+                _ => unimplemented!(),
+            }
+        }
+        point_lights.sort_by(|lptr, rptr| {
             let lnode = &hub.nodes[lptr];
             let rnode = &hub.nodes[rptr];
-            let ldist = lnode.world_transform.disp.distance2(camera_position);
-            let rdist = rnode.world_transform.disp.distance2(camera_position);
+            let ldist = (lnode.world_transform.disp - camera_position).squared_length();
+            let rdist = (rnode.world_transform.disp - camera_position).squared_length();
             ldist.partial_cmp(&rdist).unwrap_or(cmp::Ordering::Greater)
         });
+        direct_lights.sort_by(|lptr, rptr| {
+            let lnode = &hub.nodes[lptr];
+            let rnode = &hub.nodes[rptr];
+            let ldist = (lnode.world_transform.disp - camera_position).squared_length();
+            let rdist = (rnode.world_transform.disp - camera_position).squared_length();
+            ldist.partial_cmp(&rdist).unwrap_or(cmp::Ordering::Greater)
+        });
+        ambient_lights.sort_by(|lptr, rptr| {
+            let lnode = &hub.nodes[lptr];
+            let rnode = &hub.nodes[rptr];
+            let ldist = (lnode.world_transform.disp - camera_position).squared_length();
+            let rdist = (rnode.world_transform.disp - camera_position).squared_length();
+            ldist.partial_cmp(&rdist).unwrap_or(cmp::Ordering::Greater)
+        });
+
+        // Compute camera view and projection matrices.
+        let mx_view = hub[camera].transform.inverse().matrix();
+        let mx_proj = camera.matrix(aspect_ratio);
+        let mx_view_proj = mx_proj * mx_view;
+
+        // Configure scene lighting.
         let mut lighting = Lighting::default();
-        lighting.ambient = (scene.ambient_light, 0.1);
-        for i in 0 .. MAX_POINT_LIGHTS {
-            use ::cgmath::EuclideanSpace;
-            if let Some(ptr) = point_light_nodes.get(i) {
+        {
+            for i in 0 .. MAX_POINT_LIGHTS {
+                lighting.points[i] = point_lights
+                    .get(i)
+                    .map(|ptr|{
+                        let node = &hub.nodes[ptr];
+                        let data = hub.light_data(ptr);
+                        render::programs::light::Point {
+                            color: data.color,
+                            intensity: data.intensity,
+                            position: node.world_transform.disp.clone().into(),
+                            shadow: None,
+                        }
+                    })
+                    .unwrap_or_default();
+            }
+
+            lighting.direct = direct_lights
+                .get(0)
+                .map(|ptr| {
+                    let node = &hub.nodes[ptr];
+                    let data = hub.light_data(ptr);
+                    let dir = node.world_transform.rot.rotate(vec3!(0, 0, 1));
+                    let pos = vec4!(dir, 0.0);
+                    render::programs::light::Direct {
+                        color: data.color,
+                        intensity: data.intensity,
+                        origin: pos,
+                        direction: dir,
+                        shadow: data.shadow.clone(),
+                    }
+                })
+                .unwrap_or_default();
+
+            lighting.ambient = ambient_lights
+                .get(0)
+                .map(|ptr| {
+                    let node = &hub.nodes[ptr];
+                    let data = hub.light_data(ptr);
+                    render::programs::light::Ambient {
+                        color: data.color,
+                        intensity: data.intensity,
+                    }
+                })
+                .unwrap_or_default();
+        }
+
+        // Compute direct shadow.
+        if let Some(projection) = lighting.direct.shadow.as_ref() {
+            let mx_proj = projection.matrix(aspect_ratio);
+            let mx_view_proj = mx_proj * mx_view;
+            self.backend.clear(&self.direct_shadow_fbo, DEPTH_CLEAR_OP);
+            for ptr in &visuals {
                 let node = &hub.nodes[ptr];
                 let data = match node.sub_node {
-                    SubNode::Light(ref data) => data,
+                    SubNode::Visual(ref data) => data,
                     _ => unreachable!(),
                 };
-                lighting.points[i].0 = ::cgmath::Point3::from_vec(node.world_transform.disp).into();
-                lighting.points[i].1 = data.color;
-                lighting.points[i].2 = data.intensity;
-            } else {
-                lighting.points[i].0 = [0.0; 3].into();
-                lighting.points[i].1 = 0xFFFFFF;
-                lighting.points[i].2 = 0.0;
+                use Material::*;
+                match data.material {
+                    Basic(_) | Phong(_) | Lambert(_) | Gouraud(_) => {
+                        let mx_world = node.world_transform.matrix();
+                        let mx_world_view_proj = mx_view_proj * mx_world;
+                        let invocation = self.programs.shadow.invoke(
+                            &self.backend,
+                            mx_world_view_proj.into(),
+                        );
+                        let draw_call = gpu::DrawCall {
+                            primitive: gpu::Primitive::Triangles,
+                            kind: data.kind,
+                            offset: data.range.start,
+                            count: data.range.end - data.range.start,
+                        };
+                        let state = Default::default();
+                        self.backend.draw(
+                            &self.direct_shadow_fbo,
+                            &state,
+                            &data.vertex_array,
+                            &draw_call,
+                            &invocation,
+                        );
+                    }
+                    _ => {}
+                }
             }
         }
 
+        // Draw all the things.
         self.backend.clear(framebuffer, CLEAR_OP);
-        for ptr in &visual_nodes {
+        for ptr in &visuals {
             let node = &hub.nodes[ptr];
-            let data = match node.sub_node {
-                SubNode::Visual(ref data) => data,
-                _ => unreachable!(),
-            };
-            let mx_world: [[f32; 4]; 4] =
-                ::cgmath::Matrix4::from(node.world_transform.clone())
-                .into();
+            let data = hub.visual_data(ptr);
+            let mx_world = node.world_transform.matrix();
             let (state, invocation, primitive);
             match data.material {
                 Material::Basic(ref params) => {
@@ -344,7 +310,7 @@ impl Renderer {
                     state = gpu::State::default();
                     invocation = self.programs.basic.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
                         color::to_linear_rgba(params.color, 1.0),
                         params.map.as_ref(),
@@ -355,7 +321,7 @@ impl Renderer {
                     state = gpu::State::default();
                     invocation = self.programs.phong.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
                         &lighting,
                         params.glossiness,
@@ -370,7 +336,7 @@ impl Renderer {
                     };
                     invocation = self.programs.basic.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
                         color::to_linear_rgba(params.color, 1.0),
                         None,
@@ -385,7 +351,7 @@ impl Renderer {
                     };
                     invocation = self.programs.basic.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
                         color::to_linear_rgba(params.color, 1.0),
                         None,
@@ -396,7 +362,7 @@ impl Renderer {
                     state = gpu::State::default();
                     invocation = self.programs.lambert.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
                         &lighting,
                         color::to_linear_rgb(params.color),
@@ -408,7 +374,7 @@ impl Renderer {
                     state = gpu::State::default();
                     invocation = self.programs.lambert.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
                         &lighting,
                         color::to_linear_rgb(params.color),
@@ -423,9 +389,9 @@ impl Renderer {
                     };
                     invocation = self.programs.basic.invoke(
                         &self.backend,
-                        mx_view_projection,
+                        mx_view_proj,
                         mx_world,
-                        [1.0, 1.0, 1.0, 1.0],
+                        vec4!(1.0),
                         Some(&params.map),
                     );
                 }
@@ -2418,3 +2384,152 @@ pub struct OldRenderer {
             
         let sampler = gpu::Sampler::from_texture2(texture);
 */
+
+/// Compiles a set of vertices from geometry.
+pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
+    let position_iter = geometry.vertices.iter();
+    let normal_iter = if geometry.normals.is_empty() {
+        Either::Left(iter::repeat(NORMAL_Z))
+    } else {
+        Either::Right(
+            geometry
+                .normals
+                .iter()
+                .map(|n| [f2i(n.x), f2i(n.y), f2i(n.z)]),
+        )
+    };
+    let tex_coord_iter = if geometry.tex_coords.is_empty() {
+        Either::Left(iter::repeat([0.0, 0.0]))
+    } else {
+        Either::Right(geometry.tex_coords.iter().map(|uv| [uv.x, uv.y]))
+    };
+    let tangent_iter = if geometry.tangents.is_empty() {
+        Either::Left(iter::repeat(TANGENT_X))
+    } else {
+        Either::Right(
+            geometry
+                .tangents
+                .iter()
+                .map(|t| [f2i(t.x), f2i(t.y), f2i(t.z), f2i(t.w)]),
+        )
+    };
+    let joint_indices_iter = if geometry.joints.indices.is_empty() {
+        Either::Left(iter::repeat([0, 0, 0, 0]))
+    } else {
+        Either::Right(geometry.joints.indices.iter().cloned())
+    };
+    let joint_weights_iter = if geometry.joints.weights.is_empty() {
+        Either::Left(iter::repeat([1.0, 1.0, 1.0, 1.0]))
+    } else {
+        Either::Right(geometry.joints.weights.iter().cloned())
+    };
+
+    izip!(
+        position_iter,
+        normal_iter,
+        tangent_iter,
+        tex_coord_iter,
+        joint_indices_iter,
+        joint_weights_iter
+    )
+        .map(|(pos, normal, tangent, uv, joint_indices, joint_weights)| {
+            Vertex {
+                a_Position: [pos.x, pos.y, pos.z, 1.0],
+                a_Normal: normal,
+                a_TexCoord: uv,
+                a_Tangent: tangent,
+                a_JointIndices: joint_indices,
+                a_JointWeights: joint_weights,
+                .. Default::default()
+            }
+        })
+        .collect()
+}
+
+/// Compiles a GPU vertex array from a set of vertex and index data.
+pub fn make_vertex_array(
+    factory: &gpu::Factory,
+    indices: Option<&[[u32; 3]]>,
+    vertices: &[Vertex],
+) -> gpu::VertexArray {
+    let mut vbuf = factory.empty_buffer(buf::Kind::Array, buf::Usage::StaticDraw);
+    factory.initialize_buffer(&mut vbuf, vertices);
+
+    let positions = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::F32(4),
+        offset_of!(Vertex::a_Position),
+        mem::size_of::<Vertex>(),
+    );
+    let tex_coords = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::F32(2),
+        offset_of!(Vertex::a_TexCoord),
+        mem::size_of::<Vertex>(),
+    );
+    let normals = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::I8Norm(3),
+        offset_of!(Vertex::a_Normal),
+        mem::size_of::<Vertex>(),
+    );
+    let tangents = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::I8Norm(4),
+        offset_of!(Vertex::a_Tangent),
+        mem::size_of::<Vertex>(),
+    );
+    let joint_indices = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::U16(4),
+        offset_of!(Vertex::a_JointIndices),
+        mem::size_of::<Vertex>(),
+    );
+    let joint_weights = gpu::Accessor::new(
+        vbuf.clone(),
+        Format::F32(4),
+        offset_of!(Vertex::a_JointWeights),
+        mem::size_of::<Vertex>(),
+    );
+
+    let indices = indices.map(|slice| {
+        let mut buffer = factory.empty_buffer(buf::Kind::Index, buf::Usage::StaticDraw);
+        factory.initialize_buffer(&mut buffer, slice);
+        gpu::Accessor::new(buffer, Format::U32(1), 0, 0)
+    });
+    let mut attributes = [None, None, None, None, None, None, None, None];
+    attributes[POSITION] = Some(positions);
+    attributes[NORMAL] = Some(normals);
+    attributes[TEX_COORD0] = Some(tex_coords);
+    attributes[TANGENT] = Some(tangents);
+    attributes[JOINT_INDICES] = Some(joint_indices);
+    attributes[JOINT_WEIGHTS] = Some(joint_weights);
+
+    factory.vertex_array(attributes, indices)
+}
+
+/// Enables/disables weight contributions to vertex inputs.
+#[derive(Clone, Debug)]
+pub struct DisplacementContribution {
+    /// Set to `1.0` if weights should influence `a_Position`.
+    pub position: f32,
+    /// Set to `1.0` if weights should influence `a_Normal`.
+    pub normal: f32,
+    /// Set to `1.0` if weights should influence `a_Tangent`.
+    pub tangent: f32,
+    /// The displacement weight.
+    pub weight: f32,
+}
+
+/// Set of zero valued displacement contribution which cause vertex attributes
+/// to be unchanged by morph targets.
+pub const ZEROED_DISPLACEMENT_CONTRIBUTION: [DisplacementContribution; MAX_TARGETS] = [
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+    DisplacementContribution { position: 0.0, normal: 0.0, tangent: 0.0, weight: 0.0 },
+];

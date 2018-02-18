@@ -27,6 +27,7 @@ arraymap = "0.1.0"
 arrayvec = "0.4"
 bitflags = "0.9"
 cgmath = { version = "0.15", features = ["mint"] }
+euler = { path = "../euler" }
 froggy = { path = "../froggy", version = "0.4.4" }
 genmesh = "0.5"
 gfx = "0.17"

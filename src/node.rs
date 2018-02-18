@@ -1,12 +1,53 @@
-use cgmath;
+use euler;
 use froggy;
-use mint;
 
+use euler::{Mat4, Quat, Vec3};
 use hub::SubNode;
 
 /// Pointer to a Node
 pub(crate) type NodePointer = froggy::Pointer<NodeInternal>;
-pub(crate) type TransformInternal = cgmath::Decomposed<cgmath::Vector3<f32>, cgmath::Quaternion<f32>>;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TransformInternal {
+    pub disp: Vec3,
+    pub rot: Quat,
+    pub scale: f32,
+}
+
+impl TransformInternal {
+    pub(crate) fn one() -> Self {
+        Self {
+            disp: vec3!(0, 0, 0),
+            rot: Quat::identity(),
+            scale: 1.0,
+        }
+    }
+
+    pub(crate) fn concat(&self, other: Self) -> Self {
+        Self {
+            scale: self.scale * other.scale,
+            rot: self.rot * other.rot,
+            disp: self.disp + self.rot.rotate(other.disp * self.scale),
+        }
+    }
+
+    pub(crate) fn inverse(&self) -> Self {
+        let scale = 1.0 / self.scale;
+        let rot = self.rot.inverse();
+        let disp = -scale * rot.rotate(self.disp);
+        Self { disp, rot, scale }
+    }
+
+    pub(crate) fn matrix(&self) -> Mat4 {
+        euler::Trs {
+            t: self.disp,
+            r: self.rot,
+            s: vec3!(self.scale),
+        }.matrix()
+    }
+}
+
+pub(crate) type Pointer = froggy::Pointer<NodeInternal>;
 
 // Fat node of the scene graph.
 //
@@ -28,36 +69,33 @@ pub(crate) struct NodeInternal {
     pub(crate) next_sibling: Option<NodePointer>,
 }
 
-/*
-impl NodeInternal {
-    pub(crate) fn to_node(&self) -> Node {
-        Node {
-            visible: self.visible,
-            world_visible: self.world_visible,
-            transform: self.transform.into(),
-            world_transform: self.world_transform.into(),
-        }
-    }
-}
-*/
-
 /// Position, rotation, and scale of the scene `Node`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transform {
     /// Position.
-    pub position: mint::Point3<f32>,
+    pub position: Vec3,
     /// Orientation.
-    pub orientation: mint::Quaternion<f32>,
+    pub orientation: Quat,
     /// Scale.
     pub scale: f32,
 }
 
+impl Transform {
+    /// Identity transform.
+    pub fn identity() -> Self {
+        Self {
+            position: vec3!(0, 0, 0),
+            orientation: Quat::identity(),
+            scale: 1.0,
+        }
+    }
+}
+
 impl From<TransformInternal> for Transform {
     fn from(tf: TransformInternal) -> Self {
-        let pos: mint::Vector3<f32> = tf.disp.into();
         Transform {
-            position: pos.into(),
-            orientation: tf.rot.into(),
+            position: tf.disp,
+            orientation: tf.rot,
             scale: tf.scale,
         }
     }
@@ -81,8 +119,8 @@ impl From<SubNode> for NodeInternal {
         NodeInternal {
             visible: true,
             world_visible: false,
-            transform: cgmath::Transform::one(),
-            world_transform: cgmath::Transform::one(),
+            transform: TransformInternal::one(),
+            world_transform: TransformInternal::one(),
             sub_node: sub,
             next_sibling: None,
         }

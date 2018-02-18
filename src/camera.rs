@@ -56,10 +56,10 @@
 //! [`Orthographic`]: struct.Orthographic.html
 //! [`Perspective`]: struct.Perspective.html
 
-use cgmath;
-use mint;
 use object;
 use std::ops;
+
+use euler::{Vec2, Mat4};
 
 /// The Z values of the near and far clipping planes of a camera's projection.
 #[derive(Clone, Debug, PartialEq)]
@@ -106,24 +106,18 @@ three_object!(Camera::object);
 
 impl Camera {
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         self.projection.matrix(aspect_ratio)
     }
 }
 
 impl Projection {
     /// Constructs an orthographic projection.
-    pub fn orthographic<P>(
-        center: P,
+    pub fn orthographic(
+        center: Vec2,
         extent_y: f32,
         range: ops::Range<f32>,
-    ) -> Self
-    where
-        P: Into<mint::Point2<f32>>,
-    {
+    ) -> Self {
         let center = center.into();
         Projection::Orthographic(Orthographic {
             center,
@@ -133,10 +127,7 @@ impl Projection {
     }
 
     /// Constructs a perspective projection.
-    pub fn perspective<R>(
-        fov_y: f32,
-        range: R,
-    ) -> Self
+    pub fn perspective<R>(fov_y: f32, range: R) -> Self
     where
         R: Into<ZRange>,
     {
@@ -147,10 +138,7 @@ impl Projection {
     }
 
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         match *self {
             Projection::Orthographic(ref x) => x.matrix(aspect_ratio),
             Projection::Perspective(ref x) => x.matrix(aspect_ratio),
@@ -162,7 +150,7 @@ impl Projection {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Orthographic {
     /// The center of the projection.
-    pub center: mint::Point2<f32>,
+    pub center: Vec2,
     /// Vertical extent from the center point. The height is double the extent.
     /// The width is derived from the height based on the current aspect ratio.
     pub extent_y: f32,
@@ -172,19 +160,26 @@ pub struct Orthographic {
 
 impl Orthographic {
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         let extent_x = aspect_ratio * self.extent_y;
-        cgmath::ortho(
-            self.center.x - extent_x,
-            self.center.x + extent_x,
-            self.center.y - self.extent_y,
-            self.center.y + self.extent_y,
-            self.range.start,
-            self.range.end,
-        ).into()
+        let l = self.center.x - extent_x;
+        let r = self.center.x + extent_x;
+        let b = self.center.y - self.extent_y;
+        let t = self.center.y + self.extent_y;
+        let n = self.range.start;
+        let f = self.range.end;
+        let m00 = 2.0 / (r - l);
+        let m11 = 2.0 / (t - b);
+        let m22 = 2.0 / (n - f);
+        let m30 = (r + l) / (l - r);
+        let m31 = (t + b) / (b - t);
+        let m32 = (f + n) / (n - f);
+        mat4!(
+            m00, 0.0, 0.0, m30,
+            0.0, m11, 0.0, m31,
+            0.0, 0.0, m22, m32,
+            0.0, 0.0, 0.0, 1.0,
+        )
     }
 }
 
@@ -200,30 +195,37 @@ pub struct Perspective {
 
 impl Perspective {
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         match self.zrange {
-            ZRange::Finite(ref range) => cgmath::perspective(
-                cgmath::Deg(self.fov_y),
-                aspect_ratio,
-                range.start,
-                range.end,
-            ).into(),
+            ZRange::Finite(ref range) => {
+                let yfov = self.fov_y.to_radians();
+                let f = 1.0 / (0.5 * yfov).tan();
+                let near = range.start;
+                let far = range.end;
+                let m00 = f / aspect_ratio;
+                let m11 = f;
+                let m22 = (far + near) / (near - far);
+                let m23 = -1.0;
+                let m32 = (2.0 * far * near) / (near - far);
+                mat4!(
+                    m00, 0.0, 0.0, 0.0,
+                    0.0, m11, 0.0, 0.0,
+                    0.0, 0.0, m22, m32,
+                    0.0, 0.0, m23, 0.0,
+                )
+            },
             ZRange::Infinite(ref range) => {
                 let m00 = 1.0 / (aspect_ratio * f32::tan(0.5 * self.fov_y));
                 let m11 = 1.0 / f32::tan(0.5 * self.fov_y);
                 let m22 = -1.0;
                 let m23 = -2.0 * range.start;
                 let m32 = -1.0;
-                let m = [
-                    [m00, 0.0, 0.0, 0.0],
-                    [0.0, m11, 0.0, 0.0],
-                    [0.0, 0.0, m22, m23],
-                    [0.0, 0.0, m32, 0.0],
-                ];
-                m.into()
+                mat4!(
+                    m00, 0.0, 0.0, 0.0,
+                    0.0, m11, 0.0, 0.0,
+                    0.0, 0.0, m22, m23,
+                    0.0, 0.0, m32, 0.0,
+                )
             }
         }
     }

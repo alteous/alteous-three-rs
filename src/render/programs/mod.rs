@@ -1,18 +1,20 @@
 //! Rendering pipelines.
 
-pub mod basic;
-pub mod lambert;
-pub mod phong;
-
-use color;
-use gpu::{self, buffer as buf};
-use mint;
-use render::Source;
-use std::{marker, mem};
-
 pub use self::basic::Basic;
 pub use self::lambert::Lambert;
 pub use self::phong::Phong;
+pub use self::shadow::Shadow;
+
+pub mod basic;
+pub mod lambert;
+pub mod phong;
+pub mod shadow;
+
+use color;
+use gpu::{self, buffer as buf};
+use std::{marker, mem};
+
+use render::Source;
 
 /// The maximum number of point lights for any forward rendered program.
 pub const MAX_POINT_LIGHTS: usize = 8;
@@ -22,29 +24,84 @@ pub struct Programs {
     pub(crate) basic: Basic,
     pub(crate) lambert: Lambert,
     pub(crate) phong: Phong,
+    pub(crate) shadow: Shadow,
+}
+
+pub mod light {
+    use camera;
+    use color;
+
+    use euler::{Vec3, Vec4};
+    
+    pub type Shadow = camera::Projection;
+
+    #[derive(Clone, Debug)]
+    pub struct Ambient {
+        pub color: color::Color,
+        pub intensity: f32,
+    }
+
+    impl Default for Ambient {
+        fn default() -> Self {
+            Self {
+                color: color::BLACK,
+                intensity: 0.0,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Direct {
+        pub color: color::Color,
+        pub intensity: f32,
+        pub origin: Vec4,
+        pub direction: Vec3,
+        pub shadow: Option<Shadow>,
+    }
+
+    impl Default for Direct {
+        fn default() -> Self {
+            Self {
+                color: color::BLACK,
+                intensity: 0.0,
+                origin: vec4!(0.0, 0.0, 0.0, 0.0),
+                direction: vec3!(0.0, 0.0, 1.0),
+                shadow: None,
+            }
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct Point {
+        pub color: color::Color,
+        pub intensity: f32,
+        pub position: Vec3,
+        pub shadow: Option<Shadow>,
+    }
+
+    impl Default for Point {
+        fn default() -> Self {
+            Self {
+                color: color::BLACK,
+                intensity: 0.0,
+                position: vec3!(),
+                shadow: None,
+            }
+        }
+    }
 }
 
 /// Illumination data.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Lighting {
     /// Global ambient lighting.
-    pub ambient: (color::Color, f32),
+    pub ambient: light::Ambient,
 
     /// Global directional lighting.
-    pub directional: (mint::Vector3<f32>, color::Color, f32),
+    pub direct: light::Direct,
 
     /// Local point lights.
-    pub points: [(mint::Point3<f32>, color::Color, f32); MAX_POINT_LIGHTS],
-}
-
-impl Default for Lighting {
-    fn default() -> Self {
-        Self {
-            ambient: (0xFFFFFF, 0.2),
-            directional: ([0.0, -1.0, 0.0].into(), 0xFFFFFF, 0.0),
-            points: [([0.0; 3].into(), 0xFFFFFF, 0.0); MAX_POINT_LIGHTS],
-        }
-    }
+    pub points: [light::Point; MAX_POINT_LIGHTS],
 }
 
 /// 4x4 identity matrix.
@@ -57,11 +114,11 @@ pub const IDENTITY: [[f32; 4]; 4] = [
 
 /// Create ALL the programs.
 pub fn init(factory: &gpu::Factory) -> Programs {
-    Programs {
-        basic: Basic::new(factory),
-        lambert: Lambert::new(factory),
-        phong: Phong::new(factory),
-    }
+    let basic = Basic::new(factory)
+    let lambert = Lambert::new(factory);
+    let phong = Phong::new(factory);
+    let shadow = Shadow::new(factory);
+    Programs { basic, lambert, phong, shadow }
 }
 
 /// Represents a uniform block in a program.
@@ -116,7 +173,7 @@ pub fn make_program(
 /// Create a uniform buffer for a uniform block in a program.
 pub fn make_uniform_buffer<T>(
     factory: &gpu::Factory,
-    binding: &UniformBlockBinding<T>,
+    _binding: &UniformBlockBinding<T>,
 ) -> gpu::Buffer {
     let size = mem::size_of::<T>();
     let kind = buf::Kind::Uniform;

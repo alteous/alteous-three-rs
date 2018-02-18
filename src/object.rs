@@ -4,8 +4,7 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::mpsc;
 
-use mint;
-
+use euler::{Quat, Vec3};
 use hub::{Message, Operation};
 use mesh::MAX_TARGETS;
 use node::NodePointer;
@@ -47,52 +46,38 @@ pub trait Object: AsRef<Base> {
     }
 
     /// Rotates object in the specific direction of `target`.
-    fn look_at<E, T>(
+    fn look_at(
         &self,
-        eye: E,
-        target: T,
-        up: Option<mint::Vector3<f32>>,
-    ) where
-        Self: Sized,
-        E: Into<mint::Point3<f32>>,
-        T: Into<mint::Point3<f32>>,
-    {
+        eye: Vec3,
+        target: Vec3,
+        up: Option<Vec3>,
+    ) {
         self.as_ref().look_at(eye, target, up)
     }
 
     /// Set both position, orientation and scale.
-    fn set_transform<P, Q>(
+    fn set_transform(
         &self,
-        pos: P,
-        rot: Q,
+        pos: Vec3,
+        rot: Quat,
         scale: f32,
-    ) where
-        Self: Sized,
-        P: Into<mint::Point3<f32>>,
-        Q: Into<mint::Quaternion<f32>>,
-    {
+    ) {
         self.as_ref().set_transform(pos, rot, scale)
     }
 
     /// Set position.
-    fn set_position<P>(
+    fn set_position(
         &self,
-        pos: P,
-    ) where
-        Self: Sized,
-        P: Into<mint::Point3<f32>>,
-    {
+        pos: Vec3,
+    ) {
         self.as_ref().set_position(pos)
     }
 
     /// Set orientation.
-    fn set_orientation<Q>(
+    fn set_orientation(
         &self,
-        rot: Q,
-    ) where
-        Self: Sized,
-        Q: Into<mint::Quaternion<f32>>,
-    {
+        rot: Quat,
+    ) {
         self.as_ref().set_orientation(rot)
     }
 
@@ -135,90 +120,52 @@ impl fmt::Debug for Base {
 }
 
 impl Base {
+    /// Pass message to hub.
+    pub(crate) fn send(&self, operation: Operation) {
+        let _ = self.tx.send((self.node.downgrade(), operation));
+    }
+
     /// Invisible objects are not rendered by cameras.
-    pub fn set_visible(
-        &self,
-        visible: bool,
-    ) {
-        let msg = Operation::SetVisible(visible);
-        let _ = self.tx.send((self.node.downgrade(), msg));
+    pub fn set_visible(&self, visible: bool) {
+        self.send(Operation::SetVisible(visible));
     }
 
     /// Rotates object in the specific direction of `target`.
-    pub fn look_at<E, T>(
-        &self,
-        eye: E,
-        target: T,
-        up: Option<mint::Vector3<f32>>,
-    ) where
-        E: Into<mint::Point3<f32>>,
-        T: Into<mint::Point3<f32>>,
-    {
-        use cgmath::{InnerSpace, Point3, Quaternion, Rotation, Vector3};
-        let p: [mint::Point3<f32>; 2] = [eye.into(), target.into()];
-        let dir = (Point3::from(p[0]) - Point3::from(p[1])).normalize();
-        let z = Vector3::unit_z();
+    pub fn look_at(&self, eye: Vec3, target: Vec3, up: Option<Vec3>) {
+        let dir = (eye - target).normalize();
+        let z = vec3!(0, 0, 1);
         let up = match up {
-            Some(v) => Vector3::from(v).normalize(),
+            Some(v) => v.normalize(),
             None if dir.dot(z).abs() < 0.99 => z,
-            None => Vector3::unit_y(),
+            None => vec3!(0, 1, 0),
         };
-        let q = Quaternion::look_at(dir, up).invert();
-        self.set_transform(p[0], q, 1.0);
+        let q = Quat::look_at(dir, up).inverse();
+        self.set_transform(eye, q, 1.0);
     }
 
     /// Set both position, orientation and scale.
-    pub fn set_transform<P, Q>(
-        &self,
-        pos: P,
-        rot: Q,
-        scale: f32,
-    ) where
-        P: Into<mint::Point3<f32>>,
-        Q: Into<mint::Quaternion<f32>>,
-    {
-        let msg = Operation::SetTransform(Some(pos.into()), Some(rot.into()), Some(scale));
-        let _ = self.tx.send((self.node.downgrade(), msg));
+    pub fn set_transform(&self, pos: Vec3, rot: Quat, scale: f32) {
+        self.send(Operation::SetTransform(Some(pos), Some(rot), Some(scale)));
     }
 
     /// Set position.
-    pub fn set_position<P>(
-        &self,
-        pos: P,
-    ) where
-        P: Into<mint::Point3<f32>>,
-    {
-        let msg = Operation::SetTransform(Some(pos.into()), None, None);
-        let _ = self.tx.send((self.node.downgrade(), msg));
+    pub fn set_position(&self, pos: Vec3) {
+        self.send(Operation::SetTransform(Some(pos.into()), None, None));
     }
 
     /// Set orientation.
-    pub fn set_orientation<Q>(
-        &self,
-        rot: Q,
-    ) where
-        Q: Into<mint::Quaternion<f32>>,
-    {
-        let msg = Operation::SetTransform(None, Some(rot.into()), None);
-        let _ = self.tx.send((self.node.downgrade(), msg));
+    pub fn set_orientation(&self, rot: Quat) {
+        self.send(Operation::SetTransform(None, Some(rot.into()), None));
     }
 
     /// Set scale.
-    pub fn set_scale(
-        &self,
-        scale: f32,
-    ) {
-        let msg = Operation::SetTransform(None, None, Some(scale));
-        let _ = self.tx.send((self.node.downgrade(), msg));
+    pub fn set_scale(&self, scale: f32) {
+        self.send(Operation::SetTransform(None, None, Some(scale)));
     }
 
     /// Set weights.
-    pub fn set_weights(
-        &self,
-        weights: [f32; MAX_TARGETS],
-    ) {
-        let msg = Operation::SetWeights(weights);
-        let _ = self.tx.send((self.node.downgrade(), msg));
+    pub fn set_weights(&self, weights: [f32; MAX_TARGETS]) {
+        self.send(Operation::SetWeights(weights));
     }
 }
 

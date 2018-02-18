@@ -1,5 +1,4 @@
 use gpu;
-use mint;
 
 use std::path::Path;
 
@@ -45,16 +44,16 @@ impl Texture {
     /// See [`Sprite::set_texel_range`](struct.Sprite.html#method.set_texel_range).
     pub fn set_texel_range(
         &mut self,
-        base: mint::Point2<i16>,
-        size: mint::Vector2<u16>,
+        base: [i16; 2],
+        size: [u16; 2],
     ) {
         self.tex0 = [
-            base.x as f32,
-            self.total_size[1] as f32 - base.y as f32 - size.y as f32,
+            base[0] as f32,
+            self.total_size[1] as f32 - base[1] as f32 - size[1] as f32,
         ];
         self.tex1 = [
-            base.x as f32 + size.x as f32,
-            self.total_size[1] as f32 - base.y as f32,
+            base[0] as f32 + size[0] as f32,
+            self.total_size[1] as f32 - base[1] as f32,
         ];
     }
 

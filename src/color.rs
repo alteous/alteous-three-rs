@@ -1,5 +1,7 @@
 //! sRGB colors.
 
+use euler::{Vec3, Vec4};
+
 /// sRGB color represented by a 4-byte hexadecimal number.
 ///
 /// ```rust
@@ -36,7 +38,7 @@ pub const WHITE: Color = RED | BLUE | GREEN;
 /// sRGB to linear conversion.
 ///
 /// Implementation taken from https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_sRGB_decode.txt
-pub fn to_linear_rgb(c: Color) -> [f32; 3] {
+pub fn to_linear_rgb(c: Color) -> Vec3 {
     let f = |xu: u32| {
         let x = (xu & 0xFF) as f32 / 255.0;
         if x > 0.04045 {
@@ -45,19 +47,19 @@ pub fn to_linear_rgb(c: Color) -> [f32; 3] {
             x / 12.92
         }
     };
-    [f(c >> 16), f(c >> 8), f(c)]
+    vec3!(f(c >> 16), f(c >> 8), f(c))
 }
 
 /// sRGB to linear conversion with an explicit alpha value.
-pub fn to_linear_rgba(c: Color, a: f32) -> [f32; 4] {
+pub fn to_linear_rgba(c: Color, a: f32) -> Vec4 {
     let rgb = to_linear_rgb(c);
-    [rgb[0], rgb[1], rgb[2], a]
+    vec4!(rgb, a)
 }
 
 /// Linear to sRGB conversion.
 ///
 /// Implementation taken from https://en.wikipedia.org/wiki/SRGB
-pub fn from_linear_rgb(c: [f32; 3]) -> Color {
+pub fn from_linear_rgb(c: Vec3) -> Color {
     let f = |x: f32| -> u32 {
         let y = if x > 0.0031308 {
             let a = 0.055;
@@ -67,5 +69,5 @@ pub fn from_linear_rgb(c: [f32; 3]) -> Color {
         };
         (y * 255.0).round() as u32
     };
-    f(c[0]) << 16 | f(c[1]) << 8 | f(c[2])
+    f(c.x) << 16 | f(c.y) << 8 | f(c.z)
 }

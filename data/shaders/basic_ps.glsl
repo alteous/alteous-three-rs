@@ -1,4 +1,4 @@
-#version 150 core
+#version 150
 
 layout(std140) uniform b_Locals {
     mat4 u_World;

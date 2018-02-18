@@ -103,15 +103,13 @@
 //! [`Mixer::action`]: struct.Mixer.html#method.action
 //! [`Mixer::update`]: struct.Mixer.html#method.update
 
-use cgmath;
 use froggy;
-use mint;
 use object;
 use std::hash::{Hash, Hasher};
 use std::sync::mpsc;
 
+use euler::{Quat, Vec3};
 use mesh::MAX_TARGETS;
-use mint::IntraXYZ as IntraXyz;
 
 /// A target of an animation.
 pub type Target = object::Base;
@@ -214,16 +212,16 @@ enum FrameRef {
 #[derive(Clone, Debug)]
 pub enum Values {
     /// Euler angle keyframes in radians.
-    Euler(Vec<mint::EulerAngles<f32, IntraXyz>>),
+    Euler(Vec<Vec3>),
 
     /// Quaternion keyframes.
-    Quaternion(Vec<mint::Quaternion<f32>>),
+    Quaternion(Vec<Quat>),
 
     /// Scalar keyframes.
     Scalar(Vec<f32>),
 
     /// 3D vector keyframes.
-    Vector3(Vec<mint::Vector3<f32>>),
+    Vector3(Vec<Vec3>),
 }
 
 /// Message data sent from `Action` to `Mixer` over a channel.
@@ -474,37 +472,22 @@ impl ActionData {
 
             match (track.binding, &track.values) {
                 (Binding::Orientation, &Values::Euler(ref values)) => {
-                    let frame_start_value = {
-                        let euler = values[frame_index];
-                        cgmath::Quaternion::from(cgmath::Euler::new(
-                            cgmath::Rad(euler.a),
-                            cgmath::Rad(euler.b),
-                            cgmath::Rad(euler.c),
-                        ))
-                    };
-                    let frame_end_value = {
-                        let euler = values[frame_index + 1];
-                        cgmath::Quaternion::from(cgmath::Euler::new(
-                            cgmath::Rad(euler.a),
-                            cgmath::Rad(euler.b),
-                            cgmath::Rad(euler.c),
-                        ))
-                    };
-                    let update = frame_start_value.slerp(frame_end_value, s);
+                    let frame_start_value = Quat::euler(values[frame_index]);
+                    let frame_end_value = Quat::euler(values[frame_index + 1]);
+                    let update = frame_start_value.nlerp(frame_end_value, s);
                     target.set_orientation(update);
                 }
                 (Binding::Orientation, &Values::Quaternion(ref values)) => {
-                    let frame_start_value: cgmath::Quaternion<f32> = values[frame_index].into();
-                    let frame_end_value: cgmath::Quaternion<f32> = values[frame_index + 1].into();
-                    let update = frame_start_value.slerp(frame_end_value, s);
+                    let frame_start_value = Quat::from(values[frame_index]);
+                    let frame_end_value = Quat::from(values[frame_index + 1]);
+                    let update = frame_start_value.nlerp(frame_end_value, s);
                     target.set_orientation(update);
                 }
                 (Binding::Position, &Values::Vector3(ref values)) => {
-                    use cgmath::{EuclideanSpace, InnerSpace};
-                    let frame_start_value: cgmath::Vector3<f32> = values[frame_index].into();
-                    let frame_end_value: cgmath::Vector3<f32> = values[frame_index + 1].into();
+                    let frame_start_value = Vec3::from(values[frame_index]);
+                    let frame_end_value = Vec3::from(values[frame_index + 1]);
                     let update = frame_start_value.lerp(frame_end_value, s);
-                    target.set_position(cgmath::Point3::from_vec(update));
+                    target.set_position(update);
                 }
                 (Binding::Scale, &Values::Scalar(ref values)) => {
                     let frame_start_value = values[frame_index];

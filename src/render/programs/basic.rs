@@ -6,6 +6,7 @@ use gpu::program;
 use std::marker;
 use super::*;
 
+use euler::{Mat4, Vec4};
 use texture::Texture;
 
 /// Basic pipeline bindings.
@@ -44,13 +45,13 @@ const GLOBALS: UniformBlockBinding<Globals> = UniformBlockBinding {
 #[repr(C)]
 struct Globals {
     /// Combined world-to-view and view-to-projection matrix.
-    u_ViewProjection: [[f32; 4]; 4],
+    u_ViewProjection: Mat4,
 
     /// Inverse of view-to-projection matrix.
-    u_InverseProjection: [[f32; 4]; 4],
+    u_InverseProjection: Mat4,
 
     /// World-to-view matrix.
-    u_View: [[f32; 4]; 4],
+    u_View: Mat4,
 
     /// Number of lights to apply to the rendered object.
     u_NumLights: u32,
@@ -62,10 +63,10 @@ struct Globals {
 #[repr(C)]
 struct Locals {
     /// Model-to-world matrix.
-    u_World: [[f32; 4]; 4],
+    u_World: Mat4,
 
     /// Solid rendering color.
-    u_Color: [f32; 4],
+    u_Color: Vec4,
 
     /// Texture co-ordinate range.
     u_UvRange: [f32; 4],
@@ -91,9 +92,9 @@ impl Basic {
     pub fn invoke<'a>(
         &'a self,
         backend: &gpu::Factory,
-        mx_view_projection: [[f32; 4]; 4],
-        mx_world: [[f32; 4]; 4],
-        color: [f32; 4],
+        mx_view_projection: Mat4,
+        mx_world: Mat4,
+        color: Vec4,
         map: Option<&'a Texture>,
     ) -> gpu::Invocation {
         backend.overwrite_buffer(
@@ -115,8 +116,8 @@ impl Basic {
             &[
                 Globals {
                     u_ViewProjection: mx_view_projection,
-                    u_InverseProjection: IDENTITY,
-                    u_View: IDENTITY,
+                    u_InverseProjection: mat4!(),
+                    u_View: mat4!(),
                     u_NumLights: 0,
                 },
             ],

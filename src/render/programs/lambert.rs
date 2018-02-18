@@ -1,5 +1,6 @@
 //! Lambert/Gouraud rendering pipeline.
 
+use euler::{Mat4, Vec3};
 use gpu::{self, framebuffer as fbuf, program};
 use std::marker;
 use super::*;
@@ -42,7 +43,7 @@ pub const CLEAR_OP: fbuf::ClearOp = fbuf::ClearOp {
 #[derive(Clone, Copy, Debug)]
 struct AmbientLight {
     // 0
-    color: [f32; 3],
+    color: Vec3,
 
     // 12
     intensity: f32,
@@ -55,13 +56,13 @@ struct AmbientLight {
 #[repr(C)]
 struct DirectionalLight {
     // 0
-    direction: [f32; 3],
+    direction: Vec3,
     
     // 12
     _0: u32,
     
     // 16
-    color: [f32; 3],
+    color: Vec3,
     
     // 28
     intensity: f32,
@@ -74,13 +75,13 @@ struct DirectionalLight {
 #[repr(C)]
 struct PointLight {
     // 0
-    position: [f32; 3],
+    position: Vec3,
 
     // 12
     _0: u32,
     
     // 16
-    color: [f32; 3],
+    color: Vec3,
 
     // 28
     intensity: f32,
@@ -94,7 +95,7 @@ struct PointLight {
 pub struct Globals {
     // 0
     /// Combined world-to-view and view-to-projection matrix.
-    u_ViewProjection: [[f32; 4]; 4],
+    u_ViewProjection: Mat4,
 
     // 64
     /// Global ambient lighting.
@@ -113,11 +114,11 @@ pub struct Globals {
 pub struct Locals {
     // 0
     /// Model-to-world matrix.
-    u_World: [[f32; 4]; 4],
+    u_World: Mat4,
 
     // 64
     /// Material color.
-    u_Color: [f32; 3],
+    u_Color: Vec3,
 
     // 76
     /// 1.0 for lighting interpolation and 0.0 otherwise.
@@ -155,10 +156,10 @@ impl Lambert {
     pub fn invoke(
         &self,
         backend: &gpu::Factory,
-        mx_view_projection: [[f32; 4]; 4],
-        mx_world: [[f32; 4]; 4],
+        mx_view_projection: Mat4,
+        mx_world: Mat4,
         lighting: &Lighting,
-        color: [f32; 3],
+        color: Vec3,
         smooth: bool,
     ) -> gpu::Invocation {
         backend.overwrite_buffer(
@@ -170,9 +171,9 @@ impl Lambert {
                     u_Smooth: if smooth { 1.0 } else { 0.0 },
                     u_PointLights: lighting.points.map(|entry| {
                         PointLight {
-                            position: entry.0.into(),
-                            color: color::to_linear_rgb(entry.1).into(),
-                            intensity: entry.2.into(),
+                            position: entry.position.into(),
+                            color: color::to_linear_rgb(entry.color),
+                            intensity: entry.intensity,
                             .. unsafe { mem::uninitialized() }
                         }
                     }),
@@ -186,13 +187,13 @@ impl Lambert {
                 Globals {
                     u_ViewProjection: mx_view_projection,
                     u_AmbientLight: AmbientLight {
-                        color: color::to_linear_rgb(lighting.ambient.0).into(),
-                        intensity: lighting.ambient.1.into(),
+                        color: color::to_linear_rgb(lighting.ambient.color),
+                        intensity: lighting.ambient.intensity,
                     },
                     u_DirectionalLight: DirectionalLight {
-                        direction: lighting.directional.0.into(),
-                        color: color::to_linear_rgb(lighting.directional.1).into(),
-                        intensity: lighting.directional.2.into(),
+                        direction: lighting.direct.direction,
+                        color: color::to_linear_rgb(lighting.direct.color),
+                        intensity: lighting.direct.intensity,
                         .. unsafe { mem::uninitialized() }
                     },
                 },

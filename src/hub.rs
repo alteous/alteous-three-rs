@@ -1,6 +1,7 @@
 use audio::{AudioData, Operation as AudioOperation};
 use color::Color;
-use light::{ShadowMap, ShadowProjection};
+use euler::{Mat4, Quat, Vec3};
+use light::ShadowProjection;
 use material::Material;
 use mesh::MAX_TARGETS;
 use node::{NodeInternal, NodePointer};
@@ -10,14 +11,13 @@ use scene::Scene;
 use skeleton::{Bone, Skeleton};
 // use text::{Operation as TextOperation, TextData};
 
+use camera;
 use froggy;
 use gpu;
-use mint;
 use object;
 use std::{mem, ops};
 use std::sync::mpsc;
 
-use cgmath::Transform;
 use std::sync::{Arc, Mutex};
 
 //TODO: private fields?
@@ -48,13 +48,13 @@ pub(crate) struct LightData {
     pub color: Color,
     pub intensity: f32,
     pub sub_light: SubLight,
-    pub shadow: Option<(ShadowMap, ShadowProjection)>,
+    pub shadow: Option<camera::Projection>, // Option<(ShadowMap, ShadowProjection)>,
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct SkeletonData {
     pub bones: Vec<Bone>,
-    pub inverse_bind_matrices: Vec<mint::ColumnMatrix4<f32>>,
+    pub inverse_bind_matrices: Vec<Mat4>,
     pub gpu_buffer: gpu::Buffer,
     pub cpu_buffer: Vec<[f32; 4]>,
 }
@@ -102,15 +102,11 @@ pub(crate) enum Operation {
     SetAudio(AudioOperation),
     SetVisible(bool),
     // SetText(TextOperation),
-    SetTransform(
-        Option<mint::Point3<f32>>,
-        Option<mint::Quaternion<f32>>,
-        Option<f32>,
-    ),
+    SetTransform(Option<Vec3>, Option<Quat>, Option<f32>),
     SetMaterial(Material),
     SetSkeleton(Skeleton),
-    SetShadow(ShadowMap, ShadowProjection),
-    SetTexelRange(mint::Point2<i16>, mint::Vector2<u16>),
+    SetShadow(ShadowProjection),
+    SetTexelRange([i16; 2], [u16; 2]),
     SetWeights([f32; MAX_TARGETS]),
 }
 
@@ -123,7 +119,7 @@ pub(crate) struct Hub {
 }
 
 impl Hub {
-    pub(crate) fn new() -> Pointer {
+    pub fn new() -> Pointer {
         let (tx, rx) = mpsc::channel();
         let hub = Hub {
             nodes: froggy::Storage::new(),
@@ -133,7 +129,27 @@ impl Hub {
         Arc::new(Mutex::new(hub))
     }
 
-    pub(crate) fn spawn(
+    pub fn light_data(
+        &self,
+        ptr: &NodePointer,
+    ) -> &LightData {
+        match self.nodes[ptr].sub_node {
+            SubNode::Light(ref data) => data,
+            _ => panic!("called light_data on a non-light node"),
+        }
+    }
+
+    pub fn visual_data(
+        &self,
+        ptr: &NodePointer,
+    ) -> &VisualData {
+        match self.nodes[ptr].sub_node {
+            SubNode::Visual(ref data) => data,
+            _ => panic!("called visual_data on a non-visual node"),
+        }
+    }
+
+    pub fn spawn(
         &mut self,
         sub: SubNode,
     ) -> object::Base {
@@ -143,46 +159,46 @@ impl Hub {
         }
     }
 
-    pub(crate) fn spawn_empty(&mut self) -> object::Base {
+    pub fn spawn_empty(&mut self) -> object::Base {
         self.spawn(SubNode::Empty)
     }
 
-    pub(crate) fn spawn_visual(
+    pub fn spawn_visual(
         &mut self,
         visual_data: VisualData,
     ) -> object::Base {
         self.spawn(SubNode::Visual(visual_data))
     }
 
-    pub(crate) fn spawn_light(
+    pub fn spawn_light(
         &mut self,
         data: LightData,
     ) -> object::Base {
         self.spawn(SubNode::Light(data))
     }
 /*
-    pub(crate) fn spawn_ui_text(
+    pub fn spawn_ui_text(
         &mut self,
         text: TextData,
     ) -> object::Base {
         self.spawn(SubNode::UiText(text))
     }
 */
-    pub(crate) fn _spawn_audio_source(
+    pub fn _spawn_audio_source(
         &mut self,
         data: AudioData,
     ) -> object::Base {
         self.spawn(SubNode::Audio(data))
     }
 
-    pub(crate) fn _spawn_skeleton(
+    pub fn _spawn_skeleton(
         &mut self,
         data: SkeletonData,
     ) -> object::Base {
         self.spawn(SubNode::Skeleton(data))
     }
 
-    pub(crate) fn process_messages(&mut self) {
+    pub fn process_messages(&mut self) {
         while let Ok((weak_ptr, operation)) = self.message_rx.try_recv() {
             let ptr = match weak_ptr.upgrade() {
                 Ok(ptr) => ptr,
@@ -243,10 +259,10 @@ impl Hub {
                 },
                 Operation::SetTransform(pos, rot, scale) => {
                     if let Some(pos) = pos {
-                        self.nodes[&ptr].transform.disp = mint::Vector3::from(pos).into();
+                        self.nodes[&ptr].transform.disp = pos;
                     }
                     if let Some(rot) = rot {
-                        self.nodes[&ptr].transform.rot = rot.into();
+                        self.nodes[&ptr].transform.rot = rot;
                     }
                     if let Some(scale) = scale {
                         self.nodes[&ptr].transform.scale = scale;
@@ -279,9 +295,9 @@ impl Hub {
                         data.skeleton = Some(skeleton);
                     }
                 },
-                Operation::SetShadow(map, proj) => {
+                Operation::SetShadow(proj) => {
                     if let SubNode::Light(ref mut data) = self.nodes[&ptr].sub_node {
-                        data.shadow = Some((map, proj));
+                        data.shadow = Some(proj);
                     }
                 },
                 /*
@@ -332,18 +348,29 @@ impl Hub {
         }
     }
 
-    pub(crate) fn update_graph(
+    /// Prepare graph for rendering, returning visible visual nodes and
+    /// lighting information.
+    pub fn prepare_graph(
         &mut self,
         scene: &Scene,
-        visual_nodes: &mut Vec<NodePointer>,
-        point_light_nodes: &mut Vec<NodePointer>,
+        visuals: &mut Vec<NodePointer>,
+        lights: &mut Vec<NodePointer>,
     ) {
-        #[derive(Debug)]
+        self.process_messages();
+
+        let mut process_visible_node = |node: &NodeInternal, ptr: NodePointer| {
+            match node.sub_node {
+                SubNode::Visual(_) => visuals.push(ptr),
+                SubNode::Light(_) => lights.push(ptr),
+                _ => {},
+            }
+        };
+
         struct Item {
             parent: Option<NodePointer>,
             ptr: NodePointer,
         }
-
+        
         // Initialize a stack with the root node.
         let mut stack = Vec::new();
         if let Some(ptr) = scene.first_child.as_ref() {
@@ -358,22 +385,17 @@ impl Hub {
             if let Some(ref parent) = item.parent {
                 self.nodes[&item.ptr].world_transform =
                     self.nodes[parent].world_transform
-                        .concat(&self.nodes[&item.ptr].transform)
+                        .concat(self.nodes[&item.ptr].transform)
             } else {
                 self.nodes[&item.ptr].world_transform =
                     self.nodes[&item.ptr].transform.clone();
             }
 
             if self.nodes[&item.ptr].visible {
-                match self.nodes[&item.ptr].sub_node {
-                    SubNode::Visual(_) => visual_nodes.push(item.ptr.clone()),
-                    SubNode::Light(ref data) => {
-                        if data.sub_light == SubLight::Point {
-                            point_light_nodes.push(item.ptr.clone());
-                        }
-                    },
-                    _ => {},
-                }
+                process_visible_node(
+                    &self.nodes[&item.ptr],
+                    item.ptr.clone(),
+                );
             }
 
             let next = self.nodes[&item.ptr].next_sibling.clone();
@@ -415,7 +437,7 @@ impl Hub {
         walker
     }
 
-    pub(crate) fn walk(&mut self, base: NodePointer) -> TreeWalker {
+    pub fn walk(&mut self, base: NodePointer) -> TreeWalker {
         self.walk_impl(base)
     }
 }
@@ -440,7 +462,7 @@ impl<'a> TreeWalker<'a> {
             let wn = match self.stack.last() {
                 Some(parent) => {
                     self.hub.nodes[&ptr].world_visible = self.hub.nodes[&parent.ptr].world_visible && self.hub.nodes[&ptr].visible;
-                    self.hub.nodes[&ptr].world_transform = self.hub.nodes[&parent.ptr].world_transform.concat(&self.hub.nodes[&ptr].transform);
+                    self.hub.nodes[&ptr].world_transform = self.hub.nodes[&parent.ptr].world_transform.concat(self.hub.nodes[&ptr].transform);
                     WalkedNode {
                         ptr: ptr.clone(),
                     }

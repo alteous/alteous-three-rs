@@ -1,8 +1,7 @@
-extern crate cgmath;
-extern crate mint;
+#[macro_use]
+extern crate euler;
 extern crate three;
 
-use cgmath::prelude::*;
 use three::Object;
 
 fn main() {
@@ -10,7 +9,7 @@ fn main() {
 
     let mut scene = factory.scene();
     let camera = factory.perspective_camera(75.0, 1.0 .. 50.0);
-    camera.set_position([0.0, 0.0, 10.0]);
+    camera.set_position(vec3!(0.0, 0.0, 10.0));
     scene.add(&camera);
     
     let cuboid = {
@@ -18,7 +17,7 @@ fn main() {
         let material = three::material::Wireframe { color: 0x00FF00 };
         factory.mesh(geometry, material)
     };
-    cuboid.set_position([-3.0, -3.0, 0.0]);
+    cuboid.set_position(vec3!(-3.0, -3.0, 0.0));
     scene.add(&cuboid);
 
     let cylinder = {
@@ -26,7 +25,7 @@ fn main() {
         let material = three::material::Wireframe { color: 0xFF0000 };
         factory.mesh(geometry, material)
     };
-    cylinder.set_position([3.0, -3.0, 0.0]);
+    cylinder.set_position(vec3!(3.0, -3.0, 0.0));
     scene.add(&cylinder);
 
     let sphere = {
@@ -34,7 +33,7 @@ fn main() {
         let material = three::material::Wireframe { color: 0xFF0000 };
         factory.mesh(geometry, material)
     };
-    sphere.set_position([-3.0, 3.0, 0.0]);
+    sphere.set_position(vec3!(-3.0, 3.0, 0.0));
     scene.add(&sphere);
 
     let line = {
@@ -49,18 +48,18 @@ fn main() {
         };
         factory.mesh(geometry, material)
     };
-    line.set_position([3.0, 3.0, 0.0]);
+    line.set_position(vec3!(3.0, 3.0, 0.0));
     scene.add(&line);
 
-    let mut angle = cgmath::Rad::zero();
+    let mut angle = 0.0;
     while !input.quit_requested() && !input.hit(three::KEY_ESCAPE) {
         input.update();
         if let Some(diff) = input.timed(three::AXIS_LEFT_RIGHT) {
-            angle += cgmath::Rad(1.5 * diff);
+            angle += 1.5 * diff;
         } else {
-            angle += cgmath::Rad(0.5 * input.delta_time());
+            angle += 0.5 * input.delta_time();
         }
-        let q = cgmath::Quaternion::from_angle_y(angle);
+        let q = euler::Quat::axis_angle(vec3!(0, 1, 0), angle);
         cuboid.set_orientation(q);
         cylinder.set_orientation(q);
         sphere.set_orientation(q);

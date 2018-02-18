@@ -1,9 +1,9 @@
 //! Contains different types of light sources.
 
+use camera;
 use object;
 use std::ops;
 
-use camera::Orthographic;
 use hub::Operation;
 
 /// `ShadowMap` is used to render shadows from [`PointLight`](struct.PointLight.html)
@@ -11,10 +11,7 @@ use hub::Operation;
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ShadowMap;
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ShadowProjection {
-    Orthographic(Orthographic),
-}
+pub type ShadowProjection = camera::Projection;
 
 /// Omni-directional, fixed-intensity and fixed-color light source that affects
 /// all objects in the scene equally.
@@ -36,7 +33,7 @@ impl Ambient {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Directional {
     pub(crate) object: object::Base,
-    pub(crate) shadow: Option<ShadowMap>,
+    pub(crate) has_shadow: bool,
 }
 three_object!(Directional::object);
 
@@ -44,30 +41,30 @@ impl Directional {
     pub(crate) fn new(object: object::Base) -> Self {
         Directional {
             object,
-            shadow: None,
+            has_shadow: false,
         }
     }
 
-    /// Returns `true` if it has [`ShadowMap`](struct.ShadowMap.html), `false` otherwise.
+    /// Returns `true` if it has [`ShadowMap`](struct.ShadowMap.html).
     pub fn has_shadow(&self) -> bool {
-        self.shadow.is_some()
+        self.has_shadow
     }
 
     /// Adds shadow map for this light source.
     pub fn set_shadow(
         &mut self,
-        map: ShadowMap,
         extent_y: f32,
         range: ops::Range<f32>,
     ) {
-        let sp = ShadowProjection::Orthographic(Orthographic {
+        let proj = camera::Projection::Orthographic(camera::Orthographic {
             center: [0.0; 2].into(),
             extent_y,
             range,
         });
-        self.shadow = Some(map.clone());
-        let msg = Operation::SetShadow(map, sp);
-        let _ = self.object.tx.send((self.object.node.downgrade(), msg));
+        let msg = Operation::SetShadow(proj);
+        if let Ok(_) = self.object.tx.send((self.object.node.downgrade(), msg)) {
+            self.has_shadow = true;
+        }
     }
 }
 
@@ -92,7 +89,8 @@ impl Hemisphere {
     }
 }
 
-/// Light originates from a single point, and spreads outward in all directions.
+/// Light originates from a single point, and spreads outward in all
+/// directions.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Point {
     pub(crate) object: object::Base,
