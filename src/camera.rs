@@ -57,9 +57,10 @@
 //! [`Perspective`]: struct.Perspective.html
 
 use cgmath;
-use mint;
 use object;
 use std::ops;
+
+use euler::{Vec2, Mat4};
 
 /// The Z values of the near and far clipping planes of a camera's projection.
 #[derive(Clone, Debug, PartialEq)]
@@ -106,24 +107,18 @@ three_object!(Camera::object);
 
 impl Camera {
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         self.projection.matrix(aspect_ratio)
     }
 }
 
 impl Projection {
     /// Constructs an orthographic projection.
-    pub fn orthographic<P>(
-        center: P,
+    pub fn orthographic(
+        center: Vec2,
         extent_y: f32,
         range: ops::Range<f32>,
-    ) -> Self
-    where
-        P: Into<mint::Point2<f32>>,
-    {
+    ) -> Self {
         let center = center.into();
         Projection::Orthographic(Orthographic {
             center,
@@ -133,10 +128,7 @@ impl Projection {
     }
 
     /// Constructs a perspective projection.
-    pub fn perspective<R>(
-        fov_y: f32,
-        range: R,
-    ) -> Self
+    pub fn perspective<R>(fov_y: f32, range: R) -> Self
     where
         R: Into<ZRange>,
     {
@@ -147,10 +139,7 @@ impl Projection {
     }
 
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         match *self {
             Projection::Orthographic(ref x) => x.matrix(aspect_ratio),
             Projection::Perspective(ref x) => x.matrix(aspect_ratio),
@@ -162,7 +151,7 @@ impl Projection {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Orthographic {
     /// The center of the projection.
-    pub center: mint::Point2<f32>,
+    pub center: Vec2,
     /// Vertical extent from the center point. The height is double the extent.
     /// The width is derived from the height based on the current aspect ratio.
     pub extent_y: f32,
@@ -172,10 +161,7 @@ pub struct Orthographic {
 
 impl Orthographic {
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         let extent_x = aspect_ratio * self.extent_y;
         cgmath::ortho(
             self.center.x - extent_x,
@@ -200,10 +186,7 @@ pub struct Perspective {
 
 impl Perspective {
     /// Computes the projection matrix representing the camera's projection.
-    pub fn matrix(
-        &self,
-        aspect_ratio: f32,
-    ) -> mint::ColumnMatrix4<f32> {
+    pub fn matrix(&self, aspect_ratio: f32) -> Mat4 {
         match self.zrange {
             ZRange::Finite(ref range) => cgmath::perspective(
                 cgmath::Deg(self.fov_y),

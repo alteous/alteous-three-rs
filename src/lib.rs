@@ -256,6 +256,8 @@
 extern crate arraymap;
 extern crate arrayvec;
 extern crate cgmath;
+#[macro_use]
+extern crate euler;
 extern crate froggy;
 extern crate genmesh;
 extern crate gltf;

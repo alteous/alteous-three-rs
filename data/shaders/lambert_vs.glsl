@@ -1,4 +1,4 @@
-#version 330
+#version 150
 #define MAX_POINT_LIGHTS 8
 
 struct AmbientLight {

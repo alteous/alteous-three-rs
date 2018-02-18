@@ -1,4 +1,4 @@
-#version 330
+#version 150
 #define MAX_POINT_LIGHTS 8
 
 struct AmbientLight {
@@ -7,6 +7,7 @@ struct AmbientLight {
 };
 
 struct DirectionalLight {
+    vec4 position;
     vec3 direction;
     vec3 color;
     float intensity;

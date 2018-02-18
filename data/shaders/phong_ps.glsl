@@ -7,13 +7,14 @@ struct AmbientLight {
 };
 
 struct DirectionalLight {
+    vec4 position;
     vec3 direction;
     vec3 color;
     float intensity;
 };
 
 struct PointLight {
-    vec3 position;
+    vec4 position;
     vec3 color;
     float intensity;
 };

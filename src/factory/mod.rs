@@ -9,13 +9,13 @@ use color;
 use gpu;
 use hub;
 use material;
-use mint;
 use object;
 use render;
 use scene;
 
 use camera::Camera;
 use color::Color;
+use euler::Vec2;
 use geometry::Geometry;
 use group::Group;
 use hub::{Hub, SubLight};
@@ -226,9 +226,9 @@ impl Factory {
     /// It's used to render 2D.
     ///
     /// [Orthographic]: https://en.wikipedia.org/wiki/Orthographic_projection
-    pub fn orthographic_camera<P: Into<mint::Point2<f32>>>(
+    pub fn orthographic_camera(
         &mut self,
-        center: P,
+        center: Vec2,
         extent_y: f32,
         range: ops::Range<f32>,
     ) -> Camera {
@@ -282,8 +282,7 @@ impl Factory {
         let hub = self.hub.clone();
         let background = scene::Background::Color(color::BLACK);
         let first_child = None;
-        let ambient_light = color::BLACK;
-        Scene { hub, background, first_child, ambient_light }
+        Scene { hub, background, first_child }
     }
 
     /// Create new `AmbientLight`.

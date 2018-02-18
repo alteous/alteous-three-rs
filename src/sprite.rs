@@ -1,5 +1,4 @@
 use hub::Operation;
-use mint;
 use object;
 
 /// Two-dimensional bitmap that is integrated into a larger scene.
@@ -16,15 +15,7 @@ impl Sprite {
 
     /// Set area of the texture to render.
     /// It can be used in sequential animations.
-    pub fn set_texel_range<P, S>(
-        &mut self,
-        base: P,
-        size: S,
-    ) where
-        P: Into<mint::Point2<i16>>,
-        S: Into<mint::Vector2<u16>>,
-    {
-        let msg = Operation::SetTexelRange(base.into(), size.into());
-        let _ = self.object.tx.send((self.object.node.downgrade(), msg));
+    pub fn set_texel_range(&self, base: [i16; 2], size: [u16; 2]) {
+        self.object.send(Operation::SetTexelRange(base, size));
     }
 }

@@ -1,8 +1,6 @@
-use cgmath::{Decomposed, Point3, Quaternion, Rad, Vector3};
-use cgmath::{EuclideanSpace, InnerSpace, Rotation, Rotation3, Transform as Transform_};
-use mint;
 use object;
 
+use euler::Vec3;
 use input::{Button, Input, MOUSE_LEFT};
 use node::TransformInternal;
 use object::Object;
@@ -16,7 +14,7 @@ use object::Object;
 pub struct Orbit {
     object: object::Base,
     transform: TransformInternal,
-    target: Point3<f32>,
+    target: Vec3,
     button: Button,
     speed: f32,
 }
@@ -25,8 +23,8 @@ pub struct Orbit {
 #[derive(Clone, Debug)]
 pub struct Builder {
     object: object::Base,
-    position: mint::Point3<f32>,
-    target: mint::Point3<f32>,
+    position: Vec3,
+    target: Vec3,
     button: Button,
     speed: f32,
 }
@@ -46,13 +44,10 @@ impl Builder {
     /// Set the initial position.
     ///
     /// Defaults to the world origin.
-    pub fn position<P>(
+    pub fn position(
         &mut self,
-        position: P,
-    ) -> &mut Self
-    where
-        P: Into<mint::Point3<f32>>,
-    {
+        position: Vec3,
+    ) -> &mut Self {
         self.position = position.into();
         self
     }
@@ -60,13 +55,10 @@ impl Builder {
     /// Set the target position.
     ///
     /// Defaults to the world origin.
-    pub fn target<P>(
+    pub fn target(
         &mut self,
-        target: P,
-    ) -> &mut Self
-    where
-        P: Into<mint::Point3<f32>>,
-    {
+        target: Vec3,
+    ) -> &mut Self {
         self.target = target.into();
         self
     }
@@ -91,16 +83,18 @@ impl Builder {
 
     /// Finalize builder and create new `OrbitControls`.
     pub fn build(&mut self) -> Orbit {
-        let dir = (Point3::from(self.position) - Point3::from(self.target)).normalize();
-        let up = Vector3::unit_z();
-        let q = Quaternion::look_at(dir, up).invert();
+        unimplemented!()
+        /*
+        let dir = (self.position - self.target).normalize();
+        let up = vec3!(0, 1, 0);
+        let q = Quat::look_at(dir, up).inverse();
         let object = self.object.clone();
         object.set_transform(self.position, q, 1.0);
 
         Orbit {
             object,
-            transform: Decomposed {
-                disp: mint::Vector3::from(self.position).into(),
+            transform: TransformInternal {
+                disp: self.position,
                 rot: q,
                 scale: 1.0,
             },
@@ -108,6 +102,7 @@ impl Builder {
             button: self.button,
             speed: self.speed,
         }
+         */
     }
 }
 
@@ -122,27 +117,32 @@ impl Orbit {
         &mut self,
         input: &Input,
     ) {
+        /*
         if !input.hit(self.button) && input.mouse_wheel().abs() < 1e-6 {
             return;
         }
 
         if input.mouse_movements().len() > 0 {
             let mouse_delta = input.mouse_delta_ndc();
-            let pre = Decomposed {
-                disp: -self.target.to_vec(),
-                ..Decomposed::one()
+            let pre = TransformInternal {
+                disp: -1.0 * self.target,
+                .. TransformInternal::one()
             };
-            let q_ver = Quaternion::from_angle_y(Rad(self.speed * (mouse_delta.x)));
-            let axis = self.transform.rot * Vector3::unit_x();
-            let q_hor = Quaternion::from_axis_angle(axis, Rad(self.speed * (mouse_delta.y)));
-            let post = Decomposed {
+            let q_ver = Quat::axis_angle(
+                vec3!(0, 1, 0),
+                self.speed * mouse_delta.x,
+            );
+            let axis = self.transform.rot.rotate(vec3!(1, 0, 0));
+            let q_hor = Quat::axis_angle(axis, self.speed * mouse_delta.y);
+            let post = TransformInternal {
                 scale: 1.0 + input.mouse_wheel() / 1000.0,
                 rot: q_hor * q_ver,
-                disp: self.target.to_vec(),
+                disp: self.target,
             };
             self.transform = post.concat(&pre.concat(&self.transform));
-            let pf: mint::Vector3<f32> = self.transform.disp.into();
-            self.object.set_transform(pf, self.transform.rot, 1.0);
+            self.object.set_transform(self.transform.disp, self.transform.rot, 1.0);
         }
+         */
+        unimplemented!()
     }
 }
