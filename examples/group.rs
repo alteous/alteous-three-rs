@@ -1,8 +1,9 @@
-extern crate cgmath;
-extern crate mint;
+#[macro_use]
+extern crate euler;
 extern crate three;
 
-use cgmath::{Angle, Decomposed, One, Quaternion, Rad, Rotation3, Transform, Vector3};
+use euler::Quat;
+use std::f32::consts::PI;
 use three::Object;
 
 macro_rules! three_object {
@@ -25,7 +26,7 @@ struct Cube {
     group: three::Group,
     mesh: three::Mesh,
     level_id: usize,
-    orientation: Quaternion<f32>,
+    orientation: Quat,
 }
 three_object!(Cube::group);
 
@@ -42,14 +43,14 @@ fn create_cubes(
     let root = {
         let mut group = factory.group();
         let mut mesh = factory.mesh(geometry.clone(), materials[0].clone());
-        group.set_position([0.0, 0.0, 1.0]);
+        group.set_position(vec3!(0, 0, 1));
         group.set_scale(2.0);
         group.add(&mesh);
         Cube {
             group,
             mesh,
             level_id: 0,
-            orientation: Quaternion::one(),
+            orientation: Quat::identity(),
         }
     };
     let mut list = vec![root];
@@ -67,22 +68,22 @@ fn create_cubes(
         },
     ];
 
-    let axis = [
-        Vector3::unit_z(),
-        Vector3::unit_x(),
-        -Vector3::unit_x(),
-        Vector3::unit_y(),
-        -Vector3::unit_y(),
+    let axes = [
+        vec3!(0, 0, 1),
+        vec3!(1, 0, 0),
+        vec3!(-1, 0, 0),
+        vec3!(0, 1, 0),
+        vec3!(0, -1, 0),
     ];
-    let children: Vec<_> = axis.iter()
-        .map(|&axe| {
-            Decomposed {
-                disp: Vector3::new(0.0, 0.0, 1.0),
-                rot: Quaternion::from_axis_angle(axe, Rad::turn_div_4()),
+    let children: Vec<_> = axes.iter()
+        .map(|axis| {
+            three::Transform {
+                position: vec3!(0, 0, 1),
+                orientation: Quat::axis_angle(*axis, PI / 2.0),
                 scale: 1.0,
-            }.concat(&Decomposed {
-                disp: Vector3::new(0.0, 0.0, 1.0),
-                rot: Quaternion::one(),
+            }.concat(three::Transform {
+                position: vec3!(0, 0, 1),
+                orientation: Quat::identity(),
                 scale: 0.4,
             })
         })
@@ -95,10 +96,10 @@ fn create_cubes(
                 group: factory.group(),
                 mesh: factory.mesh_duplicate(&list[0].mesh, mat),
                 level_id: next.lev_id,
-                orientation: child.rot,
+                orientation: child.orientation,
             };
-            let p: mint::Vector3<f32> = child.disp.into();
-            cube.group.set_transform(p, child.rot, child.scale);
+            let p = child.position;
+            cube.group.set_transform(p, child.orientation, child.scale);
             list[next.parent_id].group.add(&cube.group);
             cube.group.add(&cube.mesh);
             if next.mat_id + 1 < materials.len() && next.lev_id + 1 < levels.len() {
@@ -129,14 +130,13 @@ fn main() {
     let (mut window, mut input, mut renderer, mut factory) = three::init();
     let mut scene = factory.scene();
     scene.background = three::Background::Color(0x204060);
-    scene.ambient_light = 0xFFFF00;
 
     let camera = factory.perspective_camera(60.0, 1.0 .. 100.0);
-    camera.look_at([-1.8, -8.0, 7.0], [0.0, 0.0, 3.5], None);
+    camera.look_at(vec3!(-1.8, -8.0, 7.0), vec3!(0.0, 0.0, 3.5), None);
     scene.add(&camera);
 
     let light = factory.point_light(0xffffff, 1.0);
-    light.set_position([0.0, -10.0, 10.0]);
+    light.set_position(vec3!(0.0, -10.0, 10.0));
     scene.add(&light);
 
     let materials: Vec<_> = COLORS
@@ -153,8 +153,8 @@ fn main() {
         let time = timer.get(&input);
         for cube in cubes.iter_mut() {
             let level = &levels[cube.level_id];
-            let angle = Rad(time * level.speed);
-            let q = cube.orientation * cgmath::Quaternion::from_angle_z(angle);
+            let angle = time * level.speed;
+            let q = cube.orientation * Quat::axis_angle(vec3!(0, 0, 1), angle);
             cube.group.set_orientation(q);
         }
 
