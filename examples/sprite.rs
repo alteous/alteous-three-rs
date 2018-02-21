@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate euler;
 extern crate three;
 
 use three::Object;
@@ -45,7 +47,7 @@ impl Animator {
 
 fn main() {
     let (mut window, mut input, mut renderer, mut factory) = three::init();
-    let camera = factory.orthographic_camera([0.0, 0.0], 10.0, -10.0 .. 10.0);
+    let camera = factory.orthographic_camera(vec2!(0.0, 0.0), 10.0, -10.0 .. 10.0);
 
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
