@@ -1,8 +1,8 @@
 //! Structures for creating and storing geometric primitives.
 
+use euler::{Vec2, Vec3, Vec4};
 use genmesh::{EmitTriangles, Triangulate, Vertex as GenVertex};
 use genmesh::generators::{self, IndexedPolygon, SharedVertex};
-use mint;
 use vec_map::VecMap;
 
 /// A collection of vertices, their normals, and faces that defines the
@@ -53,13 +53,13 @@ use vec_map::VecMap;
 #[derive(Clone, Debug, Default)]
 pub struct Geometry {
     /// Vertex positions.
-    pub vertices: Vec<mint::Point3<f32>>,
+    pub vertices: Vec<Vec3>,
     /// Vertex normals.
-    pub normals: Vec<mint::Vector3<f32>>,
+    pub normals: Vec<Vec3>,
     /// Vertex tangents.
-    pub tangents: Vec<mint::Vector4<f32>>,
+    pub tangents: Vec<Vec4>,
     /// Vertex texture co-ordinates.
-    pub tex_coords: Vec<mint::Point2<f32>>,
+    pub tex_coords: Vec<Vec2>,
     /// Face indices.
     ///
     /// When omitted, the vertex order `[[0, 1, 2], [3, 4, 5], ...]` is
@@ -86,11 +86,11 @@ pub struct MorphTargets {
     /// Morph target names, one per morph target index.
     pub names: VecMap<String>,
     /// Contiguous sets of vertex displacements.
-    pub vertices: Vec<mint::Vector3<f32>>,
+    pub vertices: Vec<Vec3>,
     /// Contiguous sets of normal displacements.
-    pub normals: Vec<mint::Vector3<f32>>,
+    pub normals: Vec<Vec3>,
     /// Contiguous sets of tangent displacements.
-    pub tangents: Vec<mint::Vector3<f32>>,
+    pub tangents: Vec<Vec3>,
 }
 
 impl Geometry {
@@ -145,7 +145,7 @@ impl Geometry {
     /// ];
     /// let geometry = three::Geometry::with_vertices(vertices);
     /// ```
-    pub fn with_vertices(vertices: Vec<mint::Point3<f32>>) -> Self {
+    pub fn with_vertices(vertices: Vec<Vec3>) -> Self {
         Geometry {
             vertices,
             normals: Vec::new(),
@@ -161,8 +161,8 @@ impl Geometry {
     where
         P: EmitTriangles<Vertex = usize>,
         G: IndexedPolygon<P> + SharedVertex<GenVertex>,
-        Fpos: Fn(GenVertex) -> mint::Point3<f32>,
-        Fnor: Fn(GenVertex) -> mint::Vector3<f32>,
+        Fpos: Fn(GenVertex) -> Vec3,
+        Fnor: Fn(GenVertex) -> Vec3,
     {
         Geometry {
             vertices: gen.shared_vertex_iter().map(fpos).collect(),

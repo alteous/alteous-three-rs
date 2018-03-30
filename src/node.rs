@@ -89,6 +89,29 @@ impl Transform {
             scale: 1.0,
         }
     }
+
+    pub fn concat(&self, other: Self) -> Self {
+        Self {
+            scale: self.scale * other.scale,
+            orientation: self.orientation * other.orientation,
+            position: self.position + self.orientation.rotate(other.position * self.scale),
+        }
+    }
+
+    pub fn inverse(&self) -> Self {
+        let scale = 1.0 / self.scale;
+        let orientation = self.orientation.inverse();
+        let position = -scale * orientation.rotate(self.position);
+        Self { position, orientation, scale }
+    }
+
+    pub fn matrix(&self) -> Mat4 {
+        euler::Trs {
+            t: self.position,
+            r: self.orientation,
+            s: vec3!(self.scale),
+        }.matrix()
+    }
 }
 
 impl From<TransformInternal> for Transform {
@@ -112,6 +135,17 @@ pub struct Node {
     pub visible: bool,
     /// The same as `visible`, used internally.
     pub world_visible: bool,
+}
+
+impl<'a> From<&'a NodeInternal> for Node {
+    fn from(intern: &'a NodeInternal) -> Node {
+        Node {
+            transform: intern.transform.into(),
+            world_transform: intern.world_transform.into(),
+            visible: intern.visible,
+            world_visible: intern.world_visible,
+        }
+    }
 }
 
 impl From<SubNode> for NodeInternal {

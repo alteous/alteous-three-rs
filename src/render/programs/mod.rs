@@ -114,7 +114,7 @@ pub const IDENTITY: [[f32; 4]; 4] = [
 
 /// Create ALL the programs.
 pub fn init(factory: &gpu::Factory) -> Programs {
-    let basic = Basic::new(factory)
+    let basic = Basic::new(factory);
     let lambert = Lambert::new(factory);
     let phong = Phong::new(factory);
     let shadow = Shadow::new(factory);

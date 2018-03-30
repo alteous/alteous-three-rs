@@ -265,7 +265,7 @@ extern crate gltf_importer;
 extern crate gltf_utils;
 extern crate glutin;
 #[macro_use]
-extern crate gpu;
+pub extern crate gpu;
 extern crate image;
 extern crate includedir;
 #[macro_use]
@@ -295,14 +295,13 @@ mod hub;
 mod input;
 pub mod light;
 pub mod material;
-mod mesh;
+pub mod mesh;
 mod node;
 pub mod object;
 pub mod render;
 pub mod scene;
 pub mod skeleton;
 mod sprite;
-//mod text;
 mod texture;
 mod util;
 

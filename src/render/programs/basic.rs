@@ -65,7 +65,7 @@ struct Locals {
     /// Model-to-world matrix.
     u_World: Mat4,
 
-    /// Solid rendering color.
+    /// Solid rendering color.3
     u_Color: Vec4,
 
     /// Texture co-ordinate range.
@@ -98,8 +98,7 @@ impl Basic {
         map: Option<&'a Texture>,
     ) -> gpu::Invocation {
         backend.overwrite_buffer(
-            self.locals.as_slice(),
-            &[
+            self.locals.as_slice(),            &[
                 Locals {
                     u_World: mx_world,
                     u_Color: color,

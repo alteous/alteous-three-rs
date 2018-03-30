@@ -16,7 +16,7 @@ pub type Sampler = gpu::Sampler2;
 /// An image applied (mapped) to the surface of a shape or polygon.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Texture {
-    inner: gpu::Texture2,
+    pub(crate) inner: gpu::Texture2,
     total_size: [u32; 2],
     tex0: [f32; 2],
     tex1: [f32; 2],

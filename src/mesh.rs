@@ -1,9 +1,10 @@
+use gpu;
 use object;
 
 use geometry::Geometry;
 use hub::Operation;
 use material::Material;
-use hub::DynamicData;
+use render::Vertex;
 use skeleton::Skeleton;
 
 use std::hash::{Hash, Hasher};
@@ -107,25 +108,26 @@ three_object!(Mesh::object);
 /// A dynamic version of a mesh allows changing the geometry on CPU side
 /// in order to animate the mesh.
 #[derive(Clone, Debug)]
-pub struct DynamicMesh {
+pub struct Dynamic {
     pub(crate) object: object::Base,
+    pub(crate) vbuf: gpu::Buffer,
     pub(crate) geometry: Geometry,
-    pub(crate) dynamic: DynamicData,
+    pub(crate) vertices: Vec<Vertex>,
 }
-three_object!(DynamicMesh::object);
+three_object!(Dynamic::object);
 
-impl PartialEq for DynamicMesh {
+impl PartialEq for Dynamic {
     fn eq(
         &self,
-        other: &DynamicMesh,
+        other: &Dynamic,
     ) -> bool {
         self.object == other.object
     }
 }
 
-impl Eq for DynamicMesh {}
+impl Eq for Dynamic {}
 
-impl Hash for DynamicMesh {
+impl Hash for Dynamic {
     fn hash<H: Hasher>(
         &self,
         state: &mut H,
@@ -163,7 +165,7 @@ impl Mesh {
     }
 }
 
-impl DynamicMesh {
+impl Dynamic {
     /// Returns the number of vertices of the geometry base shape.
     pub fn vertex_count(&self) -> usize {
         self.geometry.vertices.len()

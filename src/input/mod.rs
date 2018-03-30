@@ -1,7 +1,7 @@
 use glutin::{self, ElementState, MouseButton, MouseScrollDelta};
 pub use glutin::VirtualKeyCode as Key;
-use mint;
 
+use euler::Vec2;
 use std::collections::HashSet;
 use std::time;
 
@@ -21,15 +21,15 @@ struct State {
     is_focused: bool,
     keys_pressed: HashSet<Key>,
     mouse_pressed: HashSet<MouseButton>,
-    mouse_pos: mint::Point2<f32>,
-    mouse_pos_ndc: mint::Point2<f32>,
+    mouse_pos: Vec2,
+    mouse_pos_ndc: Vec2,
 }
 
 struct Diff {
     time_delta: TimerDuration,
     keys_hit: Vec<Key>,
-    mouse_moves: Vec<mint::Vector2<f32>>,
-    mouse_moves_ndc: Vec<mint::Vector2<f32>>,
+    mouse_moves: Vec<Vec2>,
+    mouse_moves_ndc: Vec<Vec2>,
     axes_raw: Vec<(u8, f32)>,
     mouse_hit: Vec<MouseButton>,
     mouse_wheel: Vec<f32>,
@@ -156,13 +156,13 @@ impl Input {
     }
 
     /// Get current mouse pointer position in pixels from top-left.
-    pub fn mouse_pos(&self) -> mint::Point2<f32> {
+    pub fn mouse_pos(&self) -> Vec2 {
         self.state.mouse_pos
     }
 
     /// Get current mouse pointer position in Normalized Display Coordinates.
     /// See [`map_to_ndc`](struct.Renderer.html#method.map_to_ndc).
-    pub fn mouse_pos_ndc(&self) -> mint::Point2<f32> {
+    pub fn mouse_pos_ndc(&self) -> Vec2 {
         self.state.mouse_pos_ndc
     }
 
@@ -177,12 +177,12 @@ impl Input {
     }
 
     /// Get list of all mouse movements since last frame in pixels.
-    pub fn mouse_movements(&self) -> &[mint::Vector2<f32>] {
+    pub fn mouse_movements(&self) -> &[Vec2] {
         &self.delta.mouse_moves[..]
     }
 
     /// Get list of all mouse movements since last frame in NDC.
-    pub fn mouse_movements_ndc(&self) -> &[mint::Vector2<f32>] {
+    pub fn mouse_movements_ndc(&self) -> &[Vec2] {
         &self.delta.mouse_moves_ndc[..]
     }
 
@@ -191,30 +191,20 @@ impl Input {
         &self.delta.axes_raw[..]
     }
 
-    fn calculate_delta(moves: &[mint::Vector2<f32>]) -> mint::Vector2<f32> {
-        use cgmath::Vector2;
-        moves
-            .iter()
-            .cloned()
-            .map(Vector2::from)
-            .sum::<Vector2<f32>>()
-            .into()
-    }
-
-    /// Get summarized mouse movements (the sum of all movements since last frame) in pixels.
-    pub fn mouse_delta(&self) -> mint::Vector2<f32> {
-        Input::calculate_delta(self.mouse_movements())
+    /// Get summarized mouse movements (the sum of all movements since last
+    /// frame) in pixels.
+    pub fn mouse_delta(&self) -> Vec2 {
+        self.mouse_movements().iter().cloned().sum()
     }
 
     /// Get summarized mouse movements (the sum of all movements since last frame) in NDC.
-    pub fn mouse_delta_ndc(&self) -> mint::Vector2<f32> {
-        Input::calculate_delta(self.mouse_movements_ndc())
+    pub fn mouse_delta_ndc(&self) -> Vec2 {
+        self.mouse_movements_ndc().iter().cloned().sum()
     }
 
     /// Get summarized raw input along `0` and `1` axes since last frame.
     /// It usually corresponds to mouse movements.
-    pub fn mouse_delta_raw(&self) -> mint::Vector2<f32> {
-        use cgmath::Vector2;
+    pub fn mouse_delta_raw(&self) -> Vec2 {
         self.delta
             .axes_raw
             .iter()
@@ -226,9 +216,8 @@ impl Input {
                     (0.0, value)
                 }
             })
-            .map(|t| Vector2 { x: t.0, y: t.1 })
-            .sum::<Vector2<f32>>()
-            .into()
+            .map(|t| vec2!(t.0, t.1))
+            .sum()
     }
 
     /// Return whether [`Window`](struct.Window.html) is in focus or not.
@@ -277,16 +266,15 @@ impl Input {
 
     pub(crate) fn _mouse_moved(
         &mut self,
-        pos: mint::Point2<f32>,
-        pos_ndc: mint::Point2<f32>,
+        pos: Vec2,
+        pos_ndc: Vec2,
     ) {
-        use cgmath::Point2;
         self.delta
             .mouse_moves
-            .push((Point2::from(pos) - Point2::from(self.state.mouse_pos)).into());
+            .push(pos - self.state.mouse_pos);
         self.delta
             .mouse_moves_ndc
-            .push((Point2::from(pos_ndc) - Point2::from(self.state.mouse_pos_ndc)).into());
+            .push(pos_ndc - self.state.mouse_pos_ndc);
         self.state.mouse_pos = pos;
         self.state.mouse_pos_ndc = pos_ndc;
     }

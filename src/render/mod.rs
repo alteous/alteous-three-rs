@@ -4,7 +4,7 @@ pub mod programs;
 pub mod source;
 
 use color;
-use gpu::{self, buffer as buf, framebuffer as fbuf};
+use gpu::{self, framebuffer as fbuf};
 use render;
 use std::{cmp, iter, mem};
 
@@ -164,10 +164,11 @@ impl Renderer {
         let mut lights = Vec::new();
         hub.prepare_graph(scene, &mut visuals, &mut lights);
 
-        // Sort the lights; first by kind, second by distance from camera.
-        let mut point_lights = Vec::new();
-        let mut direct_lights = Vec::new();
         let mut ambient_lights = Vec::new();
+        let mut direct_lights = Vec::new();
+        let mut point_lights = Vec::new();
+        
+        // Sort the lights; first by kind, second by distance from camera.
         for ptr in lights {
             let node = &hub.nodes[&ptr];
             let light = match node.sub_node {
@@ -268,32 +269,26 @@ impl Renderer {
                     SubNode::Visual(ref data) => data,
                     _ => unreachable!(),
                 };
-                use Material::*;
-                match data.material {
-                    Basic(_) | Phong(_) | Lambert(_) | Gouraud(_) => {
-                        let mx_world = node.world_transform.matrix();
-                        let mx_world_view_proj = mx_view_proj * mx_world;
-                        let invocation = self.programs.shadow.invoke(
-                            &self.backend,
-                            mx_world_view_proj.into(),
-                        );
-                        let draw_call = gpu::DrawCall {
-                            primitive: gpu::Primitive::Triangles,
-                            kind: data.kind,
-                            offset: data.range.start,
-                            count: data.range.end - data.range.start,
-                        };
-                        let state = Default::default();
-                        self.backend.draw(
-                            &self.direct_shadow_fbo,
-                            &state,
-                            &data.vertex_array,
-                            &draw_call,
-                            &invocation,
-                        );
-                    }
-                    _ => {}
-                }
+                let mx_world = node.world_transform.matrix();
+                let mx_world_view_proj = mx_view_proj * mx_world;
+                let invocation = self.programs.shadow.invoke(
+                    &self.backend,
+                    mx_world_view_proj.into(),
+                );
+                let draw_call = gpu::DrawCall {
+                    primitive: gpu::Primitive::Triangles,
+                    kind: data.kind,
+                    offset: data.range.start,
+                    count: data.range.end - data.range.start,
+                };
+                let state = Default::default();
+                self.backend.draw(
+                    &self.direct_shadow_fbo,
+                    &state,
+                    &data.vertex_array,
+                    &draw_call,
+                    &invocation,
+                );
             }
         }
 
@@ -380,6 +375,33 @@ impl Renderer {
                         color::to_linear_rgb(params.color),
                         true,
                     );
+                }
+                Material::Shader(ref params) => {
+                    primitive = params.primitive;
+                    state = params.state.clone();
+                    invocation = gpu::Invocation {
+                        program: &params.program,
+                        uniforms: [
+                            params.uniforms[0].as_ref(),
+                            params.uniforms[1].as_ref(),
+                            params.uniforms[2].as_ref(),
+                            params.uniforms[3].as_ref(),
+                        ],
+                        samplers: [
+                            params.samplers[0]
+                                .as_ref()
+                                .map(|x| (&x.inner, x.sampler.clone())),
+                            params.samplers[1]
+                                .as_ref()
+                                .map(|x| (&x.inner, x.sampler.clone())),
+                            params.samplers[2]
+                                .as_ref()
+                                .map(|x| (&x.inner, x.sampler.clone())),
+                            params.samplers[3]
+                                .as_ref()
+                                .map(|x| (&x.inner, x.sampler.clone())),
+                        ],
+                    };
                 }
                 Material::Sprite(ref params) => {
                     primitive = gpu::Primitive::TriangleStrip;
@@ -2449,12 +2471,9 @@ pub fn make_vertices(geometry: &Geometry) -> Vec<Vertex> {
 /// Compiles a GPU vertex array from a set of vertex and index data.
 pub fn make_vertex_array(
     factory: &gpu::Factory,
-    indices: Option<&[[u32; 3]]>,
-    vertices: &[Vertex],
+    ibuf: Option<gpu::Buffer>,
+    vbuf: gpu::Buffer,
 ) -> gpu::VertexArray {
-    let mut vbuf = factory.empty_buffer(buf::Kind::Array, buf::Usage::StaticDraw);
-    factory.initialize_buffer(&mut vbuf, vertices);
-
     let positions = gpu::Accessor::new(
         vbuf.clone(),
         Format::F32(4),
@@ -2492,9 +2511,7 @@ pub fn make_vertex_array(
         mem::size_of::<Vertex>(),
     );
 
-    let indices = indices.map(|slice| {
-        let mut buffer = factory.empty_buffer(buf::Kind::Index, buf::Usage::StaticDraw);
-        factory.initialize_buffer(&mut buffer, slice);
+    let indices = ibuf.map(|buffer| {
         gpu::Accessor::new(buffer, Format::U32(1), 0, 0)
     });
     let mut attributes = [None, None, None, None, None, None, None, None];

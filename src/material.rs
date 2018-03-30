@@ -1,8 +1,10 @@
 //! Material parameters for mesh rendering.
 
 use color;
+use gpu;
 
 use color::Color;
+use gpu::program::{MAX_SAMPLERS, MAX_UNIFORM_BLOCKS};
 use texture::Texture;
 
 #[doc(inline)]
@@ -239,6 +241,25 @@ impl Default for Phong {
     }
 }
 
+/// Parameters for a shader material.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Shader {
+    /// Primitive type.
+    pub primitive: gpu::Primitive,
+
+    /// The program to invoke.
+    pub program: gpu::Program,
+
+    /// The desired graphics pipeline state during the program invocation.
+    pub state: gpu::pipeline::State,
+
+    /// Program uniform buffers.
+    pub uniforms: [Option<gpu::Buffer>; MAX_UNIFORM_BLOCKS],
+
+    /// Program uniform samplers.
+    pub samplers: [Option<Texture>; MAX_SAMPLERS],
+}
+
 /// Texture for a 2D sprite.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sprite {
@@ -276,6 +297,9 @@ pub enum Material {
     /// Renders triangle meshes with a PBR (physically-based rendering)
     /// illumination model
     Pbr(Pbr),
+
+    /// Renders arbitrary geometry with a custom shader.
+    Shader(Shader),
 
     /// Renders [`Sprite`] objects with the given texture.
     ///
@@ -320,6 +344,12 @@ impl From<Phong> for Material {
 impl From<Pbr> for Material {
     fn from(params: Pbr) -> Material {
         Material::Pbr(params)
+    }
+}
+
+impl From<Shader> for Material {
+    fn from(params: Shader) -> Material {
+        Material::Shader(params)
     }
 }
 

@@ -1,11 +1,13 @@
 //! `Scene` and `SyncGuard` structures.
 
 use hub;
-use std::mem;
+use object;
+use std::{mem, sync};
 use texture;
 
 use color::Color;
-use node::NodePointer;
+use node::{Node, NodePointer};
+use hub::Hub;
 use object::Object;
 use texture::Texture;
 
@@ -21,7 +23,8 @@ pub enum Background {
     Skybox(texture::Cube),
 }
 
-/// The root node of a tree of game objects that may be rendered by a [`Camera`].
+/// The root node of a tree of game objects that may be rendered by a
+/// [`Camera`].
 ///
 /// [`Camera`]: ../camera/struct.Camera.html
 pub struct Scene {
@@ -76,8 +79,22 @@ impl Scene {
 
         error!("Unable to find child for removal");
     }
+
+    /// Create new [`SyncGuard`].
+    ///
+    /// This is performance-costly operation, you should not use it many
+    /// times per frame.
+    ///
+    /// [`SyncGuard`]: struct.SyncGuard.html
+    pub fn sync_guard<'a>(&'a mut self) -> SyncGuard<'a> {
+        let mut hub = self.hub.lock().unwrap();
+        let mut _visuals = Vec::new();
+        let mut _lights = Vec::new();
+        hub.prepare_graph(self, &mut _visuals, &mut _lights);
+        SyncGuard { hub, scene: self }
+    }
 }
-/*
+
 /// `SyncGuard` is used to obtain information about scene nodes in the most effective way.
 ///
 /// # Examples
@@ -152,7 +169,8 @@ impl Scene {
 ///
 /// [`object::Base::sync`]: ../object/struct.Base.html#method.sync
 pub struct SyncGuard<'a> {
-    hub: MutexGuard<'a, Hub>,
+    hub: sync::MutexGuard<'a, Hub>,
+    scene: &'a Scene,
 }
 
 impl<'a> SyncGuard<'a> {
@@ -168,21 +186,6 @@ impl<'a> SyncGuard<'a> {
     ) -> Node {
         let base: &object::Base = object.as_ref();
         let node_internal = &self.hub.nodes[&base.node];
-        assert_eq!(node_internal.scene_id, self.scene_id);
-        node_internal.to_node()
+        Node::from(node_internal)
     }
 }
-
-impl Scene {
-    /// Create new [`SyncGuard`](struct.SyncGuard.html).
-    ///
-    /// This is performance-costly operation, you should not use it many times per frame.
-    pub fn sync_guard<'a>(&'a mut self) -> SyncGuard<'a> {
-        let mut hub = self.hub.lock().unwrap();
-        hub.process_messages();
-        hub.update_graph();
-        let scene_id = hub.nodes[&self.object.node].scene_id;
-        SyncGuard { hub, scene_id }
-    }
-}
-*/

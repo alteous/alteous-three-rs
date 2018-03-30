@@ -1,14 +1,16 @@
 //mod load_gltf;
 mod load_texture;
 
-use std::{cmp, collections, ops};
+use std::{cmp, collections, mem, ops};
 
 use animation;
 use camera;
 use color;
 use gpu;
+use gpu::buffer as buf;
 use hub;
 use material;
+use mesh;
 use object;
 use render;
 use scene;
@@ -18,12 +20,13 @@ use color::Color;
 use euler::Vec2;
 use geometry::Geometry;
 use group::Group;
-use hub::{Hub, SubLight};
+use gpu::program::{Bindings, Program};
+use hub::{Hub, SubNode, SubLight};
 use light::{Ambient, Directional, Hemisphere, Point};
 use material::Material;
 use mesh::Mesh;
 use object::Object;
-use render::I8Norm;
+use render::{I8Norm, Vertex};
 use scene::Scene;
 use skeleton::Skeleton;
 use sprite::Sprite;
@@ -86,6 +89,36 @@ pub struct Factory {
     backend: gpu::Factory,
     hub: hub::Pointer,
     texture_cache: TextureCache,
+}
+
+/// Allows overwriting of vertices.
+///
+/// Must be dropped to perform result.
+pub struct MapVertices<'a> {
+    factory: &'a mut Factory,
+    dynamic: &'a mut mesh::Dynamic,
+}
+
+impl<'a> ops::Drop for MapVertices<'a> {
+    fn drop(&mut self) {
+        self.factory.backend.overwrite_buffer(
+            self.dynamic.vbuf.as_slice(),
+            &self.dynamic.vertices,
+        );
+    }
+}
+
+impl<'a> ops::Index<usize> for MapVertices<'a> {
+    type Output = render::Vertex;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.dynamic.vertices[index]
+    }
+}
+
+impl<'a> ops::IndexMut<usize> for MapVertices<'a> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.dynamic.vertices[index]
+    }
 }
 
 /// Loaded glTF 2.0 returned by [`Factory::load_gltf`].
@@ -175,51 +208,181 @@ impl Factory {
     }
 
     /// Create new `Mesh` with desired `Geometry` and `Material`.
-    pub fn mesh<M>(
+    pub fn mesh<M: Into<Material>>(
         &mut self,
         geometry: Geometry,
         material: M,
-    ) -> Mesh
-        where M: Into<Material>
-    {
+    ) -> Mesh {
         let material = material.into();
         let vertices = render::make_vertices(&geometry);
-        let visual_data = if geometry.faces.is_empty() {
-            let kind = gpu::draw_call::Kind::Arrays;
-            let range = 0 .. vertices.len();
-            let vertex_array = render::make_vertex_array(
-                &self.backend,
-                None,
+        let vbuf = {
+            let buf = self.backend.uninitialized_buffer(
+                vertices.len() * mem::size_of::<Vertex>(),
+                buf::Kind::Array,
+                buf::Usage::StaticDraw,
+            );
+            self.backend.overwrite_buffer(
+                buf.as_slice(),
                 &vertices,
             );
-            let skeleton = None;
-            hub::VisualData {
-                material,
-                skeleton,
-                kind,
-                range,
-                vertex_array,
-            }
+            buf
+        };
+        let ibuf = if geometry.faces.is_empty() {
+            None
         } else {
-            let indices = geometry.faces.as_slice();
-            let kind = gpu::draw_call::Kind::Elements;
-            let range = 0 .. 3 * indices.len();
-            let vertex_array = render::make_vertex_array(
-                &self.backend,
-                Some(indices),
-                &vertices,
+            let buf = self.backend.uninitialized_buffer(
+                3 * geometry.faces.len() * mem::size_of::<u32>(),
+                buf::Kind::Index,
+                buf::Usage::StaticDraw,
             );
-            let skeleton = None;
-            hub::VisualData {
-                material,
-                skeleton,
-                kind,
-                range,
-                vertex_array,
+            self.backend.overwrite_buffer(
+                buf.as_slice(),
+                &geometry.faces,
+            );
+            Some(buf)
+        };
+        let visual_data = match ibuf {
+            None => {
+                let kind = gpu::draw_call::Kind::Arrays;
+                let range = 0 .. vertices.len();
+                let vertex_array = render::make_vertex_array(
+                    &self.backend,
+                    None,
+                    vbuf,
+                );
+                let skeleton = None;
+                hub::VisualData {
+                    material,
+                    skeleton,
+                    kind,
+                    range,
+                    vertex_array,
+                }
+            }
+            Some(ibuf) => {
+                let indices = geometry.faces.as_slice();
+                let kind = gpu::draw_call::Kind::Elements;
+                let range = 0 .. 3 * indices.len();
+                let vertex_array = render::make_vertex_array(
+                    &self.backend,
+                    Some(ibuf),
+                    vbuf,
+                );
+                let skeleton = None;
+                hub::VisualData {
+                    material,
+                    skeleton,
+                    kind,
+                    range,
+                    vertex_array,
+                }
             }
         };
         let object = self.hub.lock().unwrap().spawn_visual(visual_data);
         Mesh { object }
+    }
+
+    /// Create a new `DynamicMesh` with desired `Geometry` and `Material`.
+    pub fn mesh_dynamic<M: Into<Material>>(
+        &mut self,
+        geometry: Geometry,
+        material: M,
+    ) -> mesh::Dynamic {
+        let material = material.into();
+        let vertices = render::make_vertices(&geometry);
+        let vbuf = {
+            let buf = self.backend.uninitialized_buffer(
+                vertices.len() * mem::size_of::<Vertex>(),
+                buf::Kind::Array,
+                buf::Usage::StaticDraw,
+            );
+            self.backend.overwrite_buffer(
+                buf.as_slice(),
+                &vertices,
+            );
+            buf
+        };
+        let ibuf = if geometry.faces.is_empty() {
+            None
+        } else {
+            let buf = self.backend.uninitialized_buffer(
+                3 * geometry.faces.len() * mem::size_of::<u32>(),
+                buf::Kind::Index,
+                buf::Usage::StaticDraw,
+            );
+            self.backend.overwrite_buffer(
+                buf.as_slice(),
+                &geometry.faces,
+            );
+            Some(buf)
+        };
+        let visual_data = match ibuf {
+            None => {
+                let kind = gpu::draw_call::Kind::Arrays;
+                let range = 0 .. vertices.len();
+                let vertex_array = render::make_vertex_array(
+                    &self.backend,
+                    None,
+                    vbuf.clone(),
+                );
+                let skeleton = None;
+                hub::VisualData {
+                    material,
+                    skeleton,
+                    kind,
+                    range,
+                    vertex_array,
+                }
+            }
+            Some(ibuf) => {
+                let indices = geometry.faces.as_slice();
+                let kind = gpu::draw_call::Kind::Elements;
+                let range = 0 .. 3 * indices.len();
+                let vertex_array = render::make_vertex_array(
+                    &self.backend,
+                    Some(ibuf),
+                    vbuf.clone(),
+                );
+                let skeleton = None;
+                hub::VisualData {
+                    material,
+                    skeleton,
+                    kind,
+                    range,
+                    vertex_array,
+                }
+            }
+        };
+        let object = self.hub.lock().unwrap().spawn_visual(visual_data);
+        mesh::Dynamic { object, geometry, vbuf, vertices }
+    }
+
+    /// Map vertices for updating their data.
+    pub fn map_vertices<'a>(
+        &'a mut self,
+        mesh: &'a mut mesh::Dynamic,
+    ) -> MapVertices<'a> {
+        MapVertices {
+            factory: self,
+            dynamic: mesh,
+        }
+    }
+
+    /// Create a `Mesh` sharing the geometry with another one.
+    /// Rendering a sequence of meshes with the same geometry is faster.
+    /// The material is duplicated from the template.
+    pub fn mesh_instance(
+        &mut self,
+        template: &Mesh,
+    ) -> Mesh {
+        let mut hub = self.hub.lock().unwrap();
+        let visual_data = match hub.nodes[&template.as_ref().node].sub_node {
+            SubNode::Visual(ref visual_data) => visual_data.clone(),
+            _ => unreachable!(),
+        };
+        Mesh {
+            object: hub.spawn_visual(visual_data),
+        }
     }
 
     /// Create new [Orthographic] Camera.
@@ -367,12 +530,21 @@ impl Factory {
         };
         let vertices = render::make_vertices(&geometry);
         let visual_data = {
+            let vbuf = self.backend.uninitialized_buffer(
+                vertices.len() * mem::size_of::<Vertex>(),
+                buf::Kind::Array,
+                buf::Usage::StaticDraw,
+            );
+            self.backend.overwrite_buffer(
+                vbuf.as_slice(),
+                &vertices,
+            );
             let kind = gpu::draw_call::Kind::Arrays;
             let range = 0 .. vertices.len();
             let vertex_array = render::make_vertex_array(
                 &self.backend,
                 None,
-                &vertices,
+                vbuf,
             );
             let skeleton = None;
             hub::VisualData {
@@ -386,7 +558,40 @@ impl Factory {
         let object = self.hub.lock().unwrap().spawn_visual(visual_data);
         Sprite::new(object)
     }
+
+    fn user_shader_directory(&self) -> &'static str {
+        "/home/alteous/game/data/shaders"
+    }
+
+    /// Compiler a shader program.
+    pub fn program(&mut self, name: &str, bindings: &Bindings) -> Program {
+        use gpu::shader;
+        let dir = self.user_shader_directory();
+        let vertex_shader = {
+            let code = render::Source::user(dir, name, "vs").unwrap(); 
+            self.backend.shader(shader::Kind::Vertex, &code)
+        };
+        let fragment_shader = {
+            let code = render::Source::user(dir, name, "ps").unwrap();
+            self.backend.shader(shader::Kind::Fragment, &code)
+        };
+        self.backend.program(&vertex_shader, &fragment_shader, bindings)
+    }
+
+    /// Load texture from pre-loaded data.
+    pub fn load_texture_from_memory(
+        &mut self,
+        width: u32,
+        height: u32,
+        mipmap: bool,
+        pixels: &[u8],
+    ) -> Texture {
+        let texture = self.backend.texture2(width, height, mipmap, gpu::texture::format::U8::Rgba);
+        self.backend.write_texture2(&texture, gpu::image::format::U8::Rgba, pixels);
+        Texture::new(texture, width, height)
+    }
 }
+
 /*
 impl OldFactory {
 /// Create a new [`Bone`], one component of a [`Skeleton`].
@@ -482,84 +687,6 @@ impl OldFactory {
         }
     }
 
-    /// Create a new `DynamicMesh` with desired `Geometry` and `Material`.
-    pub fn mesh_dynamic<M: Into<Material>>(
-        &mut self,
-        geometry: Geometry,
-        material: M,
-    ) -> DynamicMesh {
-        let slice = {
-            let data: &[u32] = gfx::memory::cast_slice(&geometry.faces);
-            gfx::Slice {
-                start: 0,
-                end: data.len() as u32,
-                base_vertex: 0,
-                instances: None,
-                buffer: self.backend.create_index_buffer(data),
-            }
-        };
-        let (num_vertices, vertices, upload_buf) = {
-            let data = Self::mesh_vertices(&geometry, [Target::None; MAX_TARGETS]);
-            let dest_buf = self.backend
-                .create_buffer_immutable(&data, gfx::buffer::Role::Vertex, gfx::memory::Bind::TRANSFER_DST)
-                .unwrap();
-            let upload_buf = self.backend.create_upload_buffer(data.len()).unwrap();
-            // TODO: Workaround for not having a 'write-to-slice' capability.
-            // Reason: The renderer copies the entire staging buffer upon updates.
-            {
-                self.backend
-                    .write_mapping(&upload_buf)
-                    .unwrap()
-                    .copy_from_slice(&data);
-            }
-            (data.len(), dest_buf, upload_buf)
-        };
-        let constants = self.backend.create_constant_buffer(1);
-
-        DynamicMesh {
-            object: self.hub.lock().unwrap().spawn_visual(
-                material.into(),
-                GpuData {
-                    slice,
-                    vertices,
-                    constants,
-                    pending: None,
-                    displacement_contributions: ZEROED_DISPLACEMENT_CONTRIBUTION,
-                },
-                None,
-            ),
-            geometry,
-            dynamic: DynamicData {
-                num_vertices,
-                buffer: upload_buf,
-            },
-        }
-    }
-
-    /// Create a `Mesh` sharing the geometry with another one.
-    /// Rendering a sequence of meshes with the same geometry is faster.
-    /// The material is duplicated from the template.
-    pub fn mesh_instance(
-        &mut self,
-        template: &Mesh,
-    ) -> Mesh {
-        let mut hub = self.hub.lock().unwrap();
-        let gpu_data = match hub.get(&template).sub_node {
-            SubNode::Visual(_, ref gpu, _) => GpuData {
-                constants: self.backend.create_constant_buffer(1),
-                ..gpu.clone()
-            },
-            _ => unreachable!(),
-        };
-        let material = match hub.get(&template).sub_node {
-            SubNode::Visual(ref mat, _, _) => mat.clone(),
-            _ => unreachable!(),
-        };
-        Mesh {
-            object: hub.spawn_visual(material, gpu_data, None),
-        }
-    }
-
     /// Create a `Mesh` sharing the geometry with another one but with a different material.
     /// Rendering a sequence of meshes with the same geometry is faster.
     pub fn mesh_instance_with_material<M: Into<Material>>(
@@ -608,15 +735,6 @@ impl OldFactory {
         let data = AudioData::new();
         let object = self.hub.lock().unwrap().spawn_audio_source(data);
         Source::with_object(object)
-    }
-
-    /// Map vertices for updating their data.
-    pub fn map_vertices<'a>(
-        &'a mut self,
-        mesh: &'a mut DynamicMesh,
-    ) -> MapVertices<'a> {
-        self.hub.lock().unwrap().update_mesh(mesh);
-        self.backend.write_mapping(&mesh.dynamic.buffer).unwrap()
     }
 
     /// Interpolate between the shapes of a `DynamicMesh`.
@@ -788,24 +906,6 @@ impl OldFactory {
                 map: None,
             }.into(),
         }
-    }
-
-    /// Load texture from pre-loaded data.
-    pub fn load_texture_from_memory(
-        &mut self,
-        width: u16,
-        height: u16,
-        pixels: &[u8],
-        sampler: Sampler,
-    ) -> Texture<[f32; 4]> {
-        use gfx::texture as t;
-        let kind = t::Kind::D2(width, height, t::AaMode::Single);
-        let (_, view) = self.backend
-            .create_texture_immutable_u8::<gfx::format::Srgba8>(kind, gfx::texture::Mipmap::Allocated, &[pixels])
-            .unwrap_or_else(|e| {
-                panic!("Unable to create GPU texture from memory: {:?}", e);
-            });
-        Texture::new(view, sampler.0, [width as u32, height as u32])
     }
 
     /// Load cubemap from files.

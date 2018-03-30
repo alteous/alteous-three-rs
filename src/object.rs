@@ -1,13 +1,13 @@
 //! Items in the scene heirarchy.
 
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::sync::mpsc;
 
 use euler::{Quat, Vec3};
 use hub::{Message, Operation};
 use mesh::MAX_TARGETS;
 use node::NodePointer;
+use std::hash::{Hash, Hasher};
 
 //Note: no local state should be here, only remote links
 /// `Base` represents a concrete entity that can be added to the scene.
@@ -139,7 +139,7 @@ impl Base {
             None if dir.dot(z).abs() < 0.99 => z,
             None => vec3!(0, 1, 0),
         };
-        let q = Quat::look_at(dir, up).inverse();
+        let q = Quat::look_at(eye, target, up).inverse();
         self.set_transform(eye, q, 1.0);
     }
 
